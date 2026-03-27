@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  displayName String   @map("display_name")
+  avatarUrl   String?  @map("avatar_url")
+  bio         String?  @map("bio")
+  role        Role     @default(reader)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  stories       Story[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Story {
+  id          String      @id @default(uuid())
+  title       String
+  slug        String      @unique
+  description String?
+  coverUrl    String?     @map("cover_url")
+  status      StoryStatus @default(draft)
+  authorId    String      @map("author_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  chapters    Chapter[]
+  storyGenres StoryGenre[]
+
+  @@index([authorId])
+  @@index([status, createdAt])
+  @@map("stories")
+}
+
+model Chapter {
+  id            String        @id @default(uuid())
+  storyId       String        @map("story_id")
+  chapterNumber Int           @map("chapter_number")
+  title         String
+  content       String
+  status        ChapterStatus @default(draft)
+  publishedAt   DateTime?     @map("published_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, chapterNumber])
+  @@index([storyId, status])
+  @@map("chapters")
+}
+
+model Genre {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  storyGenres StoryGenre[]
+
+  @@index([isActive, name])
+  @@map("genres")
+}
+
+model StoryGenre {
+  storyId   String   @map("story_id")
+  genreId   String   @map("genre_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, genreId])
+  @@index([genreId])
+  @@map("story_genres")
+}
+
+enum Role {
+  reader
+  author
+  admin
+}
+
+enum StoryStatus {
+  draft
+  published
+  archived
+}
+
+enum ChapterStatus {
+  draft
+  published
+}
