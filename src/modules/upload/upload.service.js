@@ -4,7 +4,8 @@ const prisma = require("../../config/prisma");
 const {
   supabaseUrl,
   supabaseServiceRoleKey,
-  supabaseStorageBucket,
+  supabaseAvatarBucket,
+  supabaseStoryCoverBucket,
   isSupabaseStorageConfigured,
 } = require("../../config/supabase");
 
@@ -23,7 +24,7 @@ const extensionByMimeType = {
   "image/png": "png",
   "image/webp": "webp",
 };
-let isBucketReady = false;
+const readyBuckets = new Set();
 
 const parseImageDataUri = (dataUri) => {
   const match = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -39,11 +40,11 @@ const parseImageDataUri = (dataUri) => {
 const toDataUri = ({ buffer, mimeType }) =>
   `data:${mimeType};base64,${Buffer.from(buffer).toString("base64")}`;
 
-const buildPublicUrl = (filePath) =>
-  `${supabaseUrl}/storage/v1/object/public/${supabaseStorageBucket}/${filePath}`;
+const buildPublicUrl = ({ bucketName, filePath }) =>
+  `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
 
-const buildRenderUrl = ({ filePath }) =>
-  `${supabaseUrl}/storage/v1/object/public/${supabaseStorageBucket}/${filePath}`;
+const buildRenderUrl = ({ bucketName, filePath }) =>
+  `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
 
 const normalizeImageToWebp = async ({
   inputBuffer,
@@ -88,8 +89,8 @@ const normalizeStoryCoverToWebp = async (inputBuffer) =>
     outputTooLargeMessage: "Ảnh bìa sau khi xử lý phải nhỏ hơn hoặc bằng 1MB",
   });
 
-const ensureStorageBucketExists = async () => {
-  if (isBucketReady) return;
+const ensureStorageBucketExists = async (bucketName) => {
+  if (readyBuckets.has(bucketName)) return;
 
   const authHeaders = {
     apikey: supabaseServiceRoleKey,
@@ -109,12 +110,10 @@ const ensureStorageBucketExists = async () => {
   }
 
   const buckets = await listResponse.json();
-  const exists =
-    Array.isArray(buckets) &&
-    buckets.some((bucket) => bucket?.id === supabaseStorageBucket);
+  const exists = Array.isArray(buckets) && buckets.some((bucket) => bucket?.id === bucketName);
 
   if (exists) {
-    isBucketReady = true;
+    readyBuckets.add(bucketName);
     return;
   }
 
@@ -125,8 +124,8 @@ const ensureStorageBucketExists = async () => {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      id: supabaseStorageBucket,
-      name: supabaseStorageBucket,
+      id: bucketName,
+      name: bucketName,
       public: true,
     }),
   });
@@ -134,21 +133,21 @@ const ensureStorageBucketExists = async () => {
   if (!createResponse.ok) {
     const createText = await createResponse.text();
     throw new Error(
-      `Không thể tạo bucket '${supabaseStorageBucket}': ${createResponse.status} ${createText || ""}`.trim(),
+      `Không thể tạo bucket '${bucketName}': ${createResponse.status} ${createText || ""}`.trim(),
     );
   }
 
-  isBucketReady = true;
+  readyBuckets.add(bucketName);
 };
 
-const uploadImage = async ({ folder, imageBase64 }) => {
+const uploadImage = async ({ bucketName, folder, imageBase64 }) => {
   if (!isSupabaseStorageConfigured()) {
     throw new Error("Supabase Storage chưa được cấu hình");
   }
   if (typeof fetch !== "function") {
     throw new Error("Node runtime chưa hỗ trợ fetch");
   }
-  await ensureStorageBucketExists();
+  await ensureStorageBucketExists(bucketName);
 
   const { mimeType, buffer } = parseImageDataUri(imageBase64);
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
@@ -162,7 +161,7 @@ const uploadImage = async ({ folder, imageBase64 }) => {
   const ext = extensionByMimeType["image/webp"];
   const randomSuffix = crypto.randomBytes(6).toString("hex");
   const filePath = `${folder}/${Date.now()}-${randomSuffix}.${ext}`;
-  const uploadUrl = `${supabaseUrl}/storage/v1/object/${supabaseStorageBucket}/${filePath}`;
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`;
 
   const response = await fetch(uploadUrl, {
     method: "POST",
@@ -184,7 +183,7 @@ const uploadImage = async ({ folder, imageBase64 }) => {
 
   return {
     filePath,
-    publicUrl: buildPublicUrl(filePath),
+    publicUrl: buildPublicUrl({ bucketName, filePath }),
   };
 };
 
@@ -208,7 +207,7 @@ const uploadStoryCoverAndGetUrl = async ({
   if (typeof fetch !== "function") {
     throw new Error("Node runtime chưa hỗ trợ fetch");
   }
-  await ensureStorageBucketExists();
+  await ensureStorageBucketExists(supabaseStoryCoverBucket);
 
   const { mimeType, buffer } = parseImageDataUri(normalizedCoverBase64);
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
@@ -221,7 +220,7 @@ const uploadStoryCoverAndGetUrl = async ({
   const processedBuffer = await normalizeStoryCoverToWebp(buffer);
   const randomSuffix = crypto.randomBytes(6).toString("hex");
   const filePath = `stories/${ownerId}/covers/${Date.now()}-${randomSuffix}.webp`;
-  const uploadUrl = `${supabaseUrl}/storage/v1/object/${supabaseStorageBucket}/${filePath}`;
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${supabaseStoryCoverBucket}/${filePath}`;
 
   const response = await fetch(uploadUrl, {
     method: "POST",
@@ -241,34 +240,44 @@ const uploadStoryCoverAndGetUrl = async ({
     );
   }
 
-  return buildPublicUrl(filePath);
+  return buildPublicUrl({ bucketName: supabaseStoryCoverBucket, filePath });
 };
 
-const extractFilePathFromPublicUrl = (publicUrl) => {
+const extractStorageTargetFromPublicUrl = (publicUrl) => {
   const normalizedUrl = String(publicUrl || "").trim();
   if (!normalizedUrl) return null;
 
-  const marker = `/storage/v1/object/public/${supabaseStorageBucket}/`;
-  const index = normalizedUrl.indexOf(marker);
-  if (index === -1) return null;
+  for (const bucketName of [supabaseAvatarBucket, supabaseStoryCoverBucket]) {
+    const marker = `/storage/v1/object/public/${bucketName}/`;
+    const index = normalizedUrl.indexOf(marker);
+    if (index === -1) continue;
 
-  return normalizedUrl.slice(index + marker.length).split("?")[0] || null;
+    const filePath = normalizedUrl.slice(index + marker.length).split("?")[0] || null;
+    if (!filePath) continue;
+
+    return { bucketName, filePath };
+  }
+
+  return null;
 };
 
 const deleteFileByPublicUrl = async (publicUrl) => {
   if (!isSupabaseStorageConfigured()) return;
   if (typeof fetch !== "function") return;
 
-  const filePath = extractFilePathFromPublicUrl(publicUrl);
-  if (!filePath) return;
+  const target = extractStorageTargetFromPublicUrl(publicUrl);
+  if (!target) return;
 
-  const response = await fetch(`${supabaseUrl}/storage/v1/object/${supabaseStorageBucket}/${filePath}`, {
-    method: "DELETE",
-    headers: {
-      apikey: supabaseServiceRoleKey,
-      Authorization: `Bearer ${supabaseServiceRoleKey}`,
+  const response = await fetch(
+    `${supabaseUrl}/storage/v1/object/${target.bucketName}/${target.filePath}`,
+    {
+      method: "DELETE",
+      headers: {
+        apikey: supabaseServiceRoleKey,
+        Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      },
     },
-  });
+  );
 
   // 404 means file is already gone; that's safe for cleanup.
   if (!response.ok && response.status !== 404) {
@@ -319,6 +328,7 @@ const uploadAvatarAndGetUrl = async ({
   if (!normalizedAvatarBase64) throw new Error("Thiếu dữ liệu avatar");
 
   const { filePath } = await uploadImage({
+    bucketName: supabaseAvatarBucket,
     folder: `avatars/${userId}`,
     imageBase64: normalizedAvatarBase64,
   });
@@ -328,6 +338,7 @@ const uploadAvatarAndGetUrl = async ({
 
 const buildRenderUrlForAvatar = (filePath) =>
   buildRenderUrl({
+    bucketName: supabaseAvatarBucket,
     filePath,
   });
 

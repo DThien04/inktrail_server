@@ -49,6 +49,7 @@ model Story {
 
   author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
   chapters    Chapter[]
+  homeBanner  HomeBanner?
   storyGenres StoryGenre[]
 
   @@index([authorId])
@@ -100,6 +101,20 @@ model StoryGenre {
   @@id([storyId, genreId])
   @@index([genreId])
   @@map("story_genres")
+}
+
+model HomeBanner {
+  id        String   @id @default(uuid())
+  storyId   String   @unique @map("story_id")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([isActive, sortOrder])
+  @@map("home_banners")
 }
 
 enum Role {
