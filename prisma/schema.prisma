@@ -20,6 +20,7 @@ model User {
 
   refreshTokens RefreshToken[]
   stories       Story[]
+  readingProgresses ReadingProgress[]
 
   @@map("users")
 }
@@ -51,10 +52,29 @@ model Story {
   chapters    Chapter[]
   homeBanner  HomeBanner?
   storyGenres StoryGenre[]
+  readingProgresses ReadingProgress[]
 
   @@index([authorId])
   @@index([status, createdAt])
   @@map("stories")
+}
+
+model ReadingProgress {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  storyId          String   @map("story_id")
+  lastChapterIndex Int      @default(0) @map("last_chapter_index")
+  lastPosition     Int?     @map("last_position")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+  @@index([userId, updatedAt])
+  @@index([storyId])
+  @@map("reading_progress")
 }
 
 model Chapter {

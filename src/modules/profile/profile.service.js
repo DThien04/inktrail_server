@@ -115,10 +115,134 @@ const deleteMyAvatar = async (userId) => {
   return formatUserProfile(updatedUser);
 };
 
+const formatReadingProgress = (progress) => ({
+  id: progress.id,
+  user_id: progress.userId,
+  story_id: progress.storyId,
+  last_chapter_index: progress.lastChapterIndex,
+  last_position: progress.lastPosition,
+  created_at: progress.createdAt,
+  updated_at: progress.updatedAt,
+});
+
+const normalizeStoryId = (value) => String(value ?? "").trim();
+
+const parseNonNegativeInt = (value, fieldName) => {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num < 0) {
+    throw new Error(`${fieldName} must be a non-negative integer`);
+  }
+  return num;
+};
+
+const ensureStoryExists = async (storyId) => {
+  const story = await prisma.story.findUnique({
+    where: { id: storyId },
+    select: { id: true },
+  });
+  if (!story) throw new Error("Story not found");
+};
+
+const getMyReadingProgressByStory = async ({ userId, storyId }) => {
+  const normalizedStoryId = normalizeStoryId(storyId);
+  if (!normalizedStoryId) throw new Error("story_id is required");
+
+  await ensureStoryExists(normalizedStoryId);
+
+  const progress = await prisma.readingProgress.findUnique({
+    where: {
+      userId_storyId: {
+        userId,
+        storyId: normalizedStoryId,
+      },
+    },
+  });
+
+  if (!progress) return null;
+  return formatReadingProgress(progress);
+};
+
+const upsertMyReadingProgress = async ({
+  userId,
+  storyId,
+  lastChapterIndex,
+  lastPosition,
+}) => {
+  const normalizedStoryId = normalizeStoryId(storyId);
+  if (!normalizedStoryId) throw new Error("story_id is required");
+  await ensureStoryExists(normalizedStoryId);
+
+  const normalizedChapterIndex = parseNonNegativeInt(
+    lastChapterIndex,
+    "last_chapter_index",
+  );
+  const normalizedLastPosition = lastPosition === undefined || lastPosition === null
+    ? null
+    : parseNonNegativeInt(lastPosition, "last_position");
+
+  const progress = await prisma.readingProgress.upsert({
+    where: {
+      userId_storyId: {
+        userId,
+        storyId: normalizedStoryId,
+      },
+    },
+    create: {
+      userId,
+      storyId: normalizedStoryId,
+      lastChapterIndex: normalizedChapterIndex,
+      lastPosition: normalizedLastPosition,
+    },
+    update: {
+      lastChapterIndex: normalizedChapterIndex,
+      lastPosition: normalizedLastPosition,
+    },
+  });
+
+  return formatReadingProgress(progress);
+};
+
+const listMyReadingProgress = async ({ userId, limit = 20 }) => {
+  const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+  const rows = await prisma.readingProgress.findMany({
+    where: { userId },
+    include: {
+      story: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          coverUrl: true,
+          status: true,
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+    take,
+  });
+
+  return rows.map((row) => ({
+    ...formatReadingProgress(row),
+    story: row.story
+      ? {
+          id: row.story.id,
+          title: row.story.title,
+          slug: row.story.slug,
+          cover_url: row.story.coverUrl,
+          status: row.story.status,
+        }
+      : null,
+  }));
+};
+
 module.exports = {
   getMyProfile,
   getProfileById,
   updateMyProfile,
   updateMyAvatar,
   deleteMyAvatar,
+  getMyReadingProgressByStory,
+  upsertMyReadingProgress,
+  listMyReadingProgress,
 };
