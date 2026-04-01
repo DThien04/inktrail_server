@@ -29,4 +29,5 @@ Thumbs.db
 .idea/
 
 # Misc
-*.pem
+*.peminktrail-server.tar
+*.tar
