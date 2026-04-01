@@ -16,6 +16,7 @@ const formatStorySummary = (story) => ({
   slug: story.slug,
   description: story.description,
   cover_url: story.coverUrl,
+  read_count: typeof story.stats?.readCount === "number" ? story.stats.readCount : 0,
   status: story.status,
   author: story.author
     ? {
@@ -68,6 +69,11 @@ const bannerInclude = {
       _count: {
         select: {
           chapters: true,
+        },
+      },
+      stats: {
+        select: {
+          readCount: true,
         },
       },
     },

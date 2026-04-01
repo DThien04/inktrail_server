@@ -7,6 +7,10 @@ const {
 const ALLOWED_STORY_STATUSES = new Set(["draft", "published", "archived"]);
 
 const normalizeText = (value) => String(value ?? "").trim();
+const QUALIFIED_READ_SECONDS = 30;
+const QUALIFIED_SCROLL_PERCENT = 50;
+const QUALIFIED_CHAPTER_INDEX = 1;
+const READ_COUNT_WINDOW_HOURS = 24;
 
 const slugify = (value) => {
   const base = normalizeText(value)
@@ -48,6 +52,7 @@ const formatStory = (story) => ({
   slug: story.slug,
   description: story.description,
   cover_url: story.coverUrl,
+  read_count: typeof story.stats?.readCount === "number" ? story.stats.readCount : 0,
   status: story.status,
   author_id: story.authorId,
   created_at: story.createdAt,
@@ -60,6 +65,43 @@ const formatStory = (story) => ({
       }))
     : [],
 });
+
+const SEARCH_SORTS = new Set(["updated", "newest", "title"]);
+
+const parseNonNegativeInt = (value, fieldName) => {
+  if (value === undefined || value === null || value === "") return 0;
+  const num = Number(value);
+  if (!Number.isInteger(num) || num < 0) {
+    throw new Error(`${fieldName} phải là số nguyên không âm`);
+  }
+  return num;
+};
+
+const parseSearchLimit = (value) => {
+  if (value === undefined || value === null || value === "") return 20;
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) {
+    throw new Error("limit phải là số nguyên dương");
+  }
+  return Math.min(num, 50);
+};
+
+const buildSearchOrderBy = (sort) => {
+  const normalizedSort = normalizeText(sort) || "updated";
+  if (!SEARCH_SORTS.has(normalizedSort)) {
+    throw new Error("sort không hợp lệ");
+  }
+
+  switch (normalizedSort) {
+    case "newest":
+      return [{ createdAt: "desc" }, { updatedAt: "desc" }];
+    case "title":
+      return [{ title: "asc" }, { updatedAt: "desc" }];
+    case "updated":
+    default:
+      return [{ updatedAt: "desc" }, { createdAt: "desc" }];
+  }
+};
 
 const parseGenreIdsInput = (genreIds) => {
   if (genreIds === undefined || genreIds === null || genreIds === "") return null;
@@ -158,6 +200,9 @@ const createStory = async ({
         : {}),
     },
     include: {
+      stats: {
+        select: { readCount: true },
+      },
       storyGenres: {
         include: {
           genre: { select: { id: true, name: true, slug: true } },
@@ -184,6 +229,9 @@ const getMyStories = async ({ userId, status }) => {
     where,
     orderBy: { updatedAt: "desc" },
     include: {
+      stats: {
+        select: { readCount: true },
+      },
       storyGenres: {
         include: {
           genre: { select: { id: true, name: true, slug: true } },
@@ -195,6 +243,192 @@ const getMyStories = async ({ userId, status }) => {
   return stories.map(formatStory);
 };
 
+const ensureStoryExists = async (storyId) => {
+  const normalizedStoryId = normalizeText(storyId);
+  if (!normalizedStoryId) throw new Error("Thiếu id truyện");
+
+  const story = await prisma.story.findUnique({
+    where: { id: normalizedStoryId },
+    select: { id: true },
+  });
+
+  if (!story) throw new Error("Không tìm thấy truyện");
+  return story;
+};
+
+const shouldQualifyRead = ({
+  chapterIndex,
+  timeSpentSeconds,
+  maxScrollPercent,
+}) =>
+  chapterIndex >= QUALIFIED_CHAPTER_INDEX ||
+  timeSpentSeconds >= QUALIFIED_READ_SECONDS ||
+  maxScrollPercent >= QUALIFIED_SCROLL_PERCENT;
+
+const searchStories = async ({ query, genreId, sort, limit }) => {
+  const normalizedQuery = normalizeText(query);
+  const normalizedGenreId = normalizeText(genreId);
+
+  const stories = await prisma.story.findMany({
+    where: {
+      status: "published",
+      ...(normalizedQuery
+        ? {
+            OR: [
+              { title: { contains: normalizedQuery, mode: "insensitive" } },
+              { description: { contains: normalizedQuery, mode: "insensitive" } },
+              {
+                author: {
+                  displayName: {
+                    contains: normalizedQuery,
+                    mode: "insensitive",
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+      ...(normalizedGenreId
+        ? {
+            storyGenres: {
+              some: {
+                genreId: normalizedGenreId,
+              },
+            },
+          }
+        : {}),
+    },
+    take: parseSearchLimit(limit),
+    orderBy: buildSearchOrderBy(sort),
+    include: {
+      stats: {
+        select: { readCount: true },
+      },
+      author: {
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+        },
+      },
+      storyGenres: {
+        include: {
+          genre: { select: { id: true, name: true, slug: true } },
+        },
+      },
+      _count: {
+        select: { chapters: true },
+      },
+    },
+  });
+
+  return stories.map((story) => ({
+    ...formatStory(story),
+    author: story.author
+      ? {
+          id: story.author.id,
+          display_name: story.author.displayName,
+          avatar_url: story.author.avatarUrl,
+        }
+      : null,
+    chapter_count:
+      typeof story._count?.chapters === "number" ? story._count.chapters : 0,
+  }));
+};
+
+const trackReadEvent = async ({
+  storyId,
+  requester,
+  deviceId,
+  chapterIndex,
+  timeSpentSeconds,
+  maxScrollPercent,
+}) => {
+  const story = await ensureStoryExists(storyId);
+  const normalizedDeviceId = normalizeText(deviceId);
+  const normalizedChapterIndex = parseNonNegativeInt(chapterIndex, "chapter_index");
+  const normalizedTimeSpentSeconds = parseNonNegativeInt(
+    timeSpentSeconds,
+    "time_spent_seconds",
+  );
+  const normalizedMaxScrollPercent = parseNonNegativeInt(
+    maxScrollPercent,
+    "max_scroll_percent",
+  );
+
+  if (!requester?.id && !normalizedDeviceId) {
+    throw new Error("Thiếu định danh người đọc");
+  }
+
+  const qualified = shouldQualifyRead({
+    chapterIndex: normalizedChapterIndex,
+    timeSpentSeconds: normalizedTimeSpentSeconds,
+    maxScrollPercent: normalizedMaxScrollPercent,
+  });
+
+  if (!qualified) {
+    return {
+      counted: false,
+      qualified: false,
+      read_count_incremented: false,
+    };
+  }
+
+  const countedAfter = new Date(Date.now() - READ_COUNT_WINDOW_HOURS * 60 * 60 * 1000);
+
+  const existingSession = await prisma.storyReadSession.findFirst({
+    where: {
+      storyId: story.id,
+      countedAt: { gte: countedAfter },
+      OR: [
+        ...(requester?.id ? [{ userId: requester.id }] : []),
+        ...(normalizedDeviceId ? [{ deviceId: normalizedDeviceId }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (existingSession) {
+    return {
+      counted: false,
+      qualified: true,
+      read_count_incremented: false,
+    };
+  }
+
+  const updatedStats = await prisma.$transaction(async (tx) => {
+    await tx.storyReadSession.create({
+      data: {
+        storyId: story.id,
+        userId: requester?.id || null,
+        deviceId: normalizedDeviceId || null,
+        chapterIndex: normalizedChapterIndex,
+        timeSpentSeconds: normalizedTimeSpentSeconds,
+        maxScrollPercent: normalizedMaxScrollPercent,
+      },
+    });
+
+    return tx.storyStat.upsert({
+      where: { storyId: story.id },
+      create: {
+        storyId: story.id,
+        readCount: 1,
+      },
+      update: {
+        readCount: { increment: 1 },
+      },
+      select: { readCount: true },
+    });
+  });
+
+  return {
+    counted: true,
+    qualified: true,
+    read_count_incremented: true,
+    read_count: updatedStats.readCount,
+  };
+};
+
 const getStoryDetailBySlug = async ({ slug, requester }) => {
   const normalizedSlug = normalizeText(slug);
   if (!normalizedSlug) throw new Error("Thiếu slug truyện");
@@ -202,6 +436,9 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
   const story = await prisma.story.findUnique({
     where: { slug: normalizedSlug },
     include: {
+      stats: {
+        select: { readCount: true },
+      },
       author: {
         select: { id: true, displayName: true, avatarUrl: true, role: true },
       },
@@ -250,6 +487,9 @@ const updateStory = async ({
   const story = await prisma.story.findUnique({
     where: { id: storyId },
     include: {
+      stats: {
+        select: { readCount: true },
+      },
       storyGenres: {
         include: {
           genre: { select: { id: true, name: true, slug: true } },
@@ -328,6 +568,9 @@ const updateStory = async ({
       ...(storyGenresData ? { storyGenres: storyGenresData } : {}),
     },
     include: {
+      stats: {
+        select: { readCount: true },
+      },
       storyGenres: {
         include: {
           genre: { select: { id: true, name: true, slug: true } },
@@ -371,6 +614,8 @@ const deleteStory = async ({ storyId, requester }) => {
 module.exports = {
   createStory,
   getMyStories,
+  searchStories,
+  trackReadEvent,
   getStoryDetailBySlug,
   updateStory,
   deleteStory,

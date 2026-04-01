@@ -41,6 +41,38 @@ const getMyStories = async (req, res) => {
   }
 };
 
+const searchStories = async (req, res) => {
+  try {
+    const stories = await storyService.searchStories({
+      query: req.query.query,
+      genreId: req.query.genre_id,
+      sort: req.query.sort,
+      limit: req.query.limit,
+    });
+
+    res.json(stories);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const trackReadEvent = async (req, res) => {
+  try {
+    const result = await storyService.trackReadEvent({
+      storyId: req.params.id,
+      requester: req.user || null,
+      deviceId: req.headers["x-device-id"],
+      chapterIndex: req.body.chapter_index,
+      timeSpentSeconds: req.body.time_spent_seconds,
+      maxScrollPercent: req.body.max_scroll_percent,
+    });
+
+    res.status(202).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getBySlug = async (req, res) => {
   try {
     const story = await storyService.getStoryDetailBySlug({
@@ -98,6 +130,8 @@ const deleteStory = async (req, res) => {
 module.exports = {
   createStory,
   getMyStories,
+  searchStories,
+  trackReadEvent,
   getBySlug,
   updateStory,
   deleteStory,

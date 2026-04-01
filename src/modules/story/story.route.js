@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const storyController = require("./story.controller");
-const { authenticate } = require("../../middlewares/auth.middleware");
+const { authenticate, authenticateOptional } = require("../../middlewares/auth.middleware");
 const { authorize } = require("../../middlewares/role.middleware");
 const { upload } = require("../../middlewares/upload.middleware");
 
@@ -12,6 +12,8 @@ router.get(
   authorize("author", "admin"),
   storyController.getMyStories,
 );
+router.get("/search", storyController.searchStories);
+router.post("/:id/read-event", authenticateOptional, storyController.trackReadEvent);
 router.post(
   "/",
   authenticate,
@@ -32,6 +34,6 @@ router.delete(
   authorize("author", "admin"),
   storyController.deleteStory,
 );
-router.get("/:slug", storyController.getBySlug);
+router.get("/:slug", authenticateOptional, storyController.getBySlug);
 
 module.exports = router;

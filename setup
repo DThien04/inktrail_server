@@ -1,0 +1,42 @@
+Lần sau update, bạn cứ theo đúng vòng này là ổn.
+ssh -i "C:\Users\ADMIN\Downloads\thien_key.pem" azureuser@20.41.123.236
+Ở máy local
+Build image mới, vẫn dùng đúng tên cũ:
+
+docker build -t inktrail-server:latest .
+Xuất ra file tar:
+
+docker save -o inktrail-server.tar inktrail-server:latest
+Upload lên VPS:
+
+scp -i "C:\Users\ADMIN\Downloads\thien_key.pem" .\inktrail-server.tar azureuser@20.41.123.236:~/
+Trên VPS
+Load đè image cũ:
+
+sudo docker load -i ~/inktrail-server.tar
+Dừng và xóa container cũ:
+
+sudo docker rm -f inktrail-server
+Chạy lại bằng image cùng tên:
+
+sudo docker run -d -p 127.0.0.1:3000:3000 --env-file ~/.env.production --name inktrail-server inktrail-server:latest
+Kiểm tra:
+
+sudo docker logs inktrail-server
+curl https://backend.chatbot.id.vn/api/health
+Nguyên tắc
+
+tên image có thể giữ nguyên: inktrail-server:latest
+tên container cũng giữ nguyên: inktrail-server
+mỗi lần update chỉ cần docker load image mới rồi docker rm -f container cũ và docker run lại
+Block ngắn nhất để lần sau dùng trên VPS
+
+sudo docker load -i ~/inktrail-server.tar
+sudo docker rm -f inktrail-server
+sudo docker run -d -p 127.0.0.1:3000:3000 --env-file ~/.env.production --name inktrail-server inktrail-server:latest
+sudo docker logs inktrail-server
+Lưu ý rất quan trọng: bạn đang dán secret thật trong editor và trong chat. Sau phiên này bạn nên đổi:
+
+DB password
+SUPABASE_SERVICE_ROLE_KEY
+Nếu muốn, mình có thể viết cho bạn một file deploy.sh trên VPS để sau này chỉ cần upload tar rồi chạy 1 lệnh là update xong.

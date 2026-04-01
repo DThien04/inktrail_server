@@ -21,6 +21,7 @@ model User {
   refreshTokens RefreshToken[]
   stories       Story[]
   readingProgresses ReadingProgress[]
+  readSessions  StoryReadSession[]
 
   @@map("users")
 }
@@ -53,6 +54,8 @@ model Story {
   homeBanner  HomeBanner?
   storyGenres StoryGenre[]
   readingProgresses ReadingProgress[]
+  readSessions StoryReadSession[]
+  stats       StoryStat?
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -75,6 +78,38 @@ model ReadingProgress {
   @@index([userId, updatedAt])
   @@index([storyId])
   @@map("reading_progress")
+}
+
+model StoryReadSession {
+  id                 String   @id @default(uuid())
+  storyId            String   @map("story_id")
+  userId             String?  @map("user_id")
+  deviceId           String?  @map("device_id")
+  chapterIndex       Int      @default(0) @map("chapter_index")
+  timeSpentSeconds   Int      @default(0) @map("time_spent_seconds")
+  maxScrollPercent   Int      @default(0) @map("max_scroll_percent")
+  countedAt          DateTime @default(now()) @map("counted_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, countedAt])
+  @@index([userId, storyId, countedAt])
+  @@index([deviceId, storyId, countedAt])
+  @@map("story_read_sessions")
+}
+
+model StoryStat {
+  storyId    String   @id @map("story_id")
+  readCount  Int      @default(0) @map("read_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("story_stats")
 }
 
 model Chapter {
