@@ -2,18 +2,26 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
-const { port } = require("./config/jwt");
+const { port, web } = require("./config/jwt");
 
 const routes = require("./routes/index");
 
 const app = express();
+const host = process.env.HOST || "0.0.0.0";
 
 app.use(helmet());
 app.use(
   cors({
-    origin: "*", // dev thoải mái, production thay bằng domain cụ thể
+    origin: (origin, callback) => {
+      if (!origin || origin === web.adminOrigin) {
+        callback(null, true);
+        return;
+      }
+      callback(null, true);
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-client-platform"],
+    credentials: true,
   }),
 );
 app.use(morgan("dev"));
@@ -39,6 +47,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Lỗi server" });
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Inktrail API running on port ${port}`);
+app.listen(port, host, () => {
+  console.log(`Inktrail API running on http://${host}:${port}`);
 });

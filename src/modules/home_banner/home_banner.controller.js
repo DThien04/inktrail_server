@@ -25,10 +25,13 @@ const getHomeBanners = async (req, res) => {
 const createHomeBanner = async (req, res) => {
   try {
     const { story_id, sort_order, is_active } = req.body;
+    const bannerFile = req.file;
     const banner = await homeBannerService.createHomeBanner({
       storyId: story_id,
       sortOrder: sort_order,
       isActive: is_active,
+      bannerBuffer: bannerFile?.buffer,
+      bannerMimeType: bannerFile?.mimetype,
     });
 
     res.status(201).json({
@@ -43,10 +46,13 @@ const createHomeBanner = async (req, res) => {
 const updateHomeBanner = async (req, res) => {
   try {
     const { sort_order, is_active } = req.body;
+    const bannerFile = req.file;
     const banner = await homeBannerService.updateHomeBanner({
       bannerId: req.params.id,
       sortOrder: sort_order,
       isActive: is_active,
+      bannerBuffer: bannerFile?.buffer,
+      bannerMimeType: bannerFile?.mimetype,
     });
 
     res.json({

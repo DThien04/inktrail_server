@@ -41,6 +41,19 @@ const getMyStories = async (req, res) => {
   }
 };
 
+const getAdminStories = async (req, res) => {
+  try {
+    const stories = await storyService.getAdminStories({
+      status: req.query.status,
+      query: req.query.query,
+    });
+
+    res.json(stories);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const searchStories = async (req, res) => {
   try {
     const stories = await storyService.searchStories({
@@ -130,6 +143,7 @@ const deleteStory = async (req, res) => {
 module.exports = {
   createStory,
   getMyStories,
+  getAdminStories,
   searchStories,
   trackReadEvent,
   getBySlug,

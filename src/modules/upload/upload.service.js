@@ -6,6 +6,7 @@ const {
   supabaseServiceRoleKey,
   supabaseAvatarBucket,
   supabaseStoryCoverBucket,
+  supabaseHomeBannerBucket,
   isSupabaseStorageConfigured,
 } = require("../../config/supabase");
 
@@ -15,15 +16,19 @@ const MAX_OUTPUT_FILE_SIZE_BYTES = 1 * 1024 * 1024;
 const AVATAR_RENDER_WIDTH = 512;
 const AVATAR_RENDER_HEIGHT = 512;
 const AVATAR_RENDER_QUALITY = 80;
-const STORY_COVER_WIDTH = 1200;
-const STORY_COVER_HEIGHT = 630;
+const STORY_COVER_WIDTH = 900;
+const STORY_COVER_HEIGHT = 1350;
 const STORY_COVER_QUALITY = 82;
+const HOME_BANNER_WIDTH = 1400;
+const HOME_BANNER_HEIGHT = 800;
+const HOME_BANNER_QUALITY = 82;
 
 const extensionByMimeType = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
 };
+
 const readyBuckets = new Set();
 
 const parseImageDataUri = (dataUri) => {
@@ -51,14 +56,17 @@ const normalizeImageToWebp = async ({
   width,
   height,
   quality,
+  fit = "cover",
+  background,
   maxOutputFileSizeBytes = MAX_OUTPUT_FILE_SIZE_BYTES,
   outputTooLargeMessage = "Ảnh sau khi xử lý vượt dung lượng cho phép",
 }) => {
   const outputBuffer = await sharp(inputBuffer)
     .rotate()
     .resize(width, height, {
-      fit: "cover",
+      fit,
       position: "centre",
+      background,
       withoutEnlargement: false,
     })
     .webp({ quality })
@@ -86,7 +94,18 @@ const normalizeStoryCoverToWebp = async (inputBuffer) =>
     width: STORY_COVER_WIDTH,
     height: STORY_COVER_HEIGHT,
     quality: STORY_COVER_QUALITY,
+    fit: "cover",
     outputTooLargeMessage: "Ảnh bìa sau khi xử lý phải nhỏ hơn hoặc bằng 1MB",
+  });
+
+const normalizeHomeBannerToWebp = async (inputBuffer) =>
+  normalizeImageToWebp({
+    inputBuffer,
+    width: HOME_BANNER_WIDTH,
+    height: HOME_BANNER_HEIGHT,
+    quality: HOME_BANNER_QUALITY,
+    fit: "cover",
+    outputTooLargeMessage: "Ảnh banner sau khi xử lý phải nhỏ hơn hoặc bằng 1MB",
   });
 
 const ensureStorageBucketExists = async (bucketName) => {
@@ -156,8 +175,8 @@ const uploadImage = async ({ bucketName, folder, imageBase64 }) => {
   if (!buffer.length || buffer.length > MAX_INPUT_FILE_SIZE_BYTES) {
     throw new Error("Ảnh đầu vào phải nhỏ hơn hoặc bằng 10MB");
   }
-  const processedBuffer = await normalizeAvatarToWebp(buffer);
 
+  const processedBuffer = await normalizeAvatarToWebp(buffer);
   const ext = extensionByMimeType["image/webp"];
   const randomSuffix = crypto.randomBytes(6).toString("hex");
   const filePath = `${folder}/${Date.now()}-${randomSuffix}.${ext}`;
@@ -176,9 +195,7 @@ const uploadImage = async ({ bucketName, folder, imageBase64 }) => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `Upload ảnh thất bại: ${response.status} ${errorText || ""}`.trim(),
-    );
+    throw new Error(`Upload ảnh thất bại: ${response.status} ${errorText || ""}`.trim());
   }
 
   return {
@@ -200,6 +217,7 @@ const uploadStoryCoverAndGetUrl = async ({
       mimeType: coverMimeType,
     });
   }
+
   if (!normalizedCoverBase64) throw new Error("Thiếu dữ liệu ảnh bìa");
   if (!isSupabaseStorageConfigured()) {
     throw new Error("Supabase Storage chưa được cấu hình");
@@ -207,6 +225,7 @@ const uploadStoryCoverAndGetUrl = async ({
   if (typeof fetch !== "function") {
     throw new Error("Node runtime chưa hỗ trợ fetch");
   }
+
   await ensureStorageBucketExists(supabaseStoryCoverBucket);
 
   const { mimeType, buffer } = parseImageDataUri(normalizedCoverBase64);
@@ -235,19 +254,77 @@ const uploadStoryCoverAndGetUrl = async ({
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `Upload ảnh bìa thất bại: ${response.status} ${errorText || ""}`.trim(),
-    );
+    throw new Error(`Upload ảnh bìa thất bại: ${response.status} ${errorText || ""}`.trim());
   }
 
   return buildPublicUrl({ bucketName: supabaseStoryCoverBucket, filePath });
+};
+
+const uploadHomeBannerImageAndGetUrl = async ({
+  ownerId,
+  bannerBase64,
+  bannerBuffer,
+  bannerMimeType,
+}) => {
+  let normalizedBannerBase64 = bannerBase64;
+  if (!normalizedBannerBase64 && bannerBuffer && bannerMimeType) {
+    normalizedBannerBase64 = toDataUri({
+      buffer: bannerBuffer,
+      mimeType: bannerMimeType,
+    });
+  }
+
+  if (!normalizedBannerBase64) throw new Error("Thiếu dữ liệu ảnh banner");
+  if (!isSupabaseStorageConfigured()) {
+    throw new Error("Supabase Storage chưa được cấu hình");
+  }
+  if (typeof fetch !== "function") {
+    throw new Error("Node runtime chưa hỗ trợ fetch");
+  }
+
+  await ensureStorageBucketExists(supabaseHomeBannerBucket);
+
+  const { mimeType, buffer } = parseImageDataUri(normalizedBannerBase64);
+  if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+    throw new Error("Ảnh banner chỉ hỗ trợ jpeg, png hoặc webp");
+  }
+  if (!buffer.length || buffer.length > MAX_INPUT_FILE_SIZE_BYTES) {
+    throw new Error("Ảnh banner đầu vào phải nhỏ hơn hoặc bằng 10MB");
+  }
+
+  const processedBuffer = await normalizeHomeBannerToWebp(buffer);
+  const randomSuffix = crypto.randomBytes(6).toString("hex");
+  const filePath = `stories/${ownerId}/banners/${Date.now()}-${randomSuffix}.webp`;
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${supabaseHomeBannerBucket}/${filePath}`;
+
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      apikey: supabaseServiceRoleKey,
+      Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      "Content-Type": "image/webp",
+      "x-upsert": "true",
+    },
+    body: processedBuffer,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Upload ảnh banner thất bại: ${response.status} ${errorText || ""}`.trim());
+  }
+
+  return buildPublicUrl({ bucketName: supabaseHomeBannerBucket, filePath });
 };
 
 const extractStorageTargetFromPublicUrl = (publicUrl) => {
   const normalizedUrl = String(publicUrl || "").trim();
   if (!normalizedUrl) return null;
 
-  for (const bucketName of [supabaseAvatarBucket, supabaseStoryCoverBucket]) {
+  for (const bucketName of [
+    supabaseAvatarBucket,
+    supabaseStoryCoverBucket,
+    supabaseHomeBannerBucket,
+  ]) {
     const marker = `/storage/v1/object/public/${bucketName}/`;
     const index = normalizedUrl.indexOf(marker);
     if (index === -1) continue;
@@ -279,7 +356,6 @@ const deleteFileByPublicUrl = async (publicUrl) => {
     },
   );
 
-  // 404 means file is already gone; that's safe for cleanup.
   if (!response.ok && response.status !== 404) {
     const errorText = await response.text();
     throw new Error(`Xóa ảnh thất bại: ${response.status} ${errorText || ""}`.trim());
@@ -325,6 +401,7 @@ const uploadAvatarAndGetUrl = async ({
       mimeType: avatarMimeType,
     });
   }
+
   if (!normalizedAvatarBase64) throw new Error("Thiếu dữ liệu avatar");
 
   const { filePath } = await uploadImage({
@@ -347,5 +424,6 @@ module.exports = {
   uploadMyAvatar,
   uploadAvatarAndGetUrl,
   uploadStoryCoverAndGetUrl,
+  uploadHomeBannerImageAndGetUrl,
   deleteFileByPublicUrl,
 };

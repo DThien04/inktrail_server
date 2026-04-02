@@ -12,6 +12,12 @@ router.get(
   authorize("author", "admin"),
   storyController.getMyStories,
 );
+router.get(
+  "/admin/list",
+  authenticate,
+  authorize("admin"),
+  storyController.getAdminStories,
+);
 router.get("/search", storyController.searchStories);
 router.post("/:id/read-event", authenticateOptional, storyController.trackReadEvent);
 router.post(

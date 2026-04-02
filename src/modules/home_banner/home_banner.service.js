@@ -1,4 +1,8 @@
 const prisma = require("../../config/prisma");
+const {
+  deleteFileByPublicUrl,
+  uploadHomeBannerImageAndGetUrl,
+} = require("../upload/upload.service");
 
 const normalizeText = (value) => String(value ?? "").trim();
 
@@ -38,6 +42,7 @@ const formatStorySummary = (story) => ({
 
 const formatHomeBanner = (banner) => ({
   id: banner.id,
+  banner_image_url: banner.bannerImageUrl,
   sort_order: banner.sortOrder,
   is_active: banner.isActive,
   created_at: banner.createdAt,
@@ -114,7 +119,13 @@ const getNextSortOrder = async () => {
   return (lastBanner?.sortOrder ?? -1) + 1;
 };
 
-const createHomeBanner = async ({ storyId, sortOrder, isActive }) => {
+const createHomeBanner = async ({
+  storyId,
+  sortOrder,
+  isActive,
+  bannerBuffer,
+  bannerMimeType,
+}) => {
   const normalizedStoryId = normalizeText(storyId);
   if (!normalizedStoryId) throw new Error("story_id không được để trống");
 
@@ -138,9 +149,18 @@ const createHomeBanner = async ({ storyId, sortOrder, isActive }) => {
   const finalSortOrder =
     sortOrder === undefined ? await getNextSortOrder() : parseSortOrder(sortOrder);
 
+  const bannerImageUrl = bannerBuffer
+    ? await uploadHomeBannerImageAndGetUrl({
+        ownerId: normalizedStoryId,
+        bannerBuffer,
+        bannerMimeType,
+      })
+    : null;
+
   const banner = await prisma.homeBanner.create({
     data: {
       storyId: normalizedStoryId,
+      bannerImageUrl,
       sortOrder: finalSortOrder,
       isActive: isActive === undefined ? true : Boolean(isActive),
     },
@@ -150,7 +170,13 @@ const createHomeBanner = async ({ storyId, sortOrder, isActive }) => {
   return formatHomeBanner(banner);
 };
 
-const updateHomeBanner = async ({ bannerId, sortOrder, isActive }) => {
+const updateHomeBanner = async ({
+  bannerId,
+  sortOrder,
+  isActive,
+  bannerBuffer,
+  bannerMimeType,
+}) => {
   const normalizedBannerId = normalizeText(bannerId);
   if (!normalizedBannerId) throw new Error("Thiếu id banner");
 
@@ -170,6 +196,14 @@ const updateHomeBanner = async ({ bannerId, sortOrder, isActive }) => {
     data.isActive = Boolean(isActive);
   }
 
+  if (bannerBuffer) {
+    data.bannerImageUrl = await uploadHomeBannerImageAndGetUrl({
+      ownerId: banner.storyId,
+      bannerBuffer,
+      bannerMimeType,
+    });
+  }
+
   if (!Object.keys(data).length) {
     throw new Error("Không có dữ liệu hợp lệ để cập nhật");
   }
@@ -180,6 +214,18 @@ const updateHomeBanner = async ({ bannerId, sortOrder, isActive }) => {
     include: bannerInclude,
   });
 
+  if (
+    data.bannerImageUrl &&
+    banner.bannerImageUrl &&
+    banner.bannerImageUrl !== updatedBanner.bannerImageUrl
+  ) {
+    try {
+      await deleteFileByPublicUrl(banner.bannerImageUrl);
+    } catch (err) {
+      console.error("Cleanup old home banner image failed:", err.message);
+    }
+  }
+
   return formatHomeBanner(updatedBanner);
 };
 
@@ -187,15 +233,28 @@ const deleteHomeBanner = async ({ bannerId }) => {
   const normalizedBannerId = normalizeText(bannerId);
   if (!normalizedBannerId) throw new Error("Thiếu id banner");
 
+  const totalBanners = await prisma.homeBanner.count();
+  if (totalBanners <= 3) {
+    throw new Error("Phải giữ ít nhất 3 banner, không thể xóa thêm");
+  }
+
   const banner = await prisma.homeBanner.findUnique({
     where: { id: normalizedBannerId },
-    select: { id: true },
+    select: { id: true, bannerImageUrl: true },
   });
   if (!banner) throw new Error("Không tìm thấy banner");
 
   await prisma.homeBanner.delete({
     where: { id: banner.id },
   });
+
+  if (banner.bannerImageUrl) {
+    try {
+      await deleteFileByPublicUrl(banner.bannerImageUrl);
+    } catch (err) {
+      console.error("Cleanup home banner image on delete failed:", err.message);
+    }
+  }
 
   return { message: "Xóa banner trang chủ thành công" };
 };

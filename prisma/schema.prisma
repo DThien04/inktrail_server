@@ -161,6 +161,7 @@ model StoryGenre {
 model HomeBanner {
   id        String   @id @default(uuid())
   storyId   String   @unique @map("story_id")
+  bannerImageUrl String? @map("banner_image_url")
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")

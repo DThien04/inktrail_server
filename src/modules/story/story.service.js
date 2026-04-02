@@ -243,6 +243,67 @@ const getMyStories = async ({ userId, status }) => {
   return stories.map(formatStory);
 };
 
+const getAdminStories = async ({ status, query }) => {
+  const normalizedQuery = normalizeText(query);
+  const where = {};
+
+  if (status !== undefined && status !== null && status !== "") {
+    const normalizedStatus = normalizeText(status);
+    if (!ALLOWED_STORY_STATUSES.has(normalizedStatus)) {
+      throw new Error("Tráº¡ng thÃ¡i truyá»‡n khÃ´ng há»£p lá»‡");
+    }
+    where.status = normalizedStatus;
+  }
+
+  if (normalizedQuery) {
+    where.OR = [
+      { title: { contains: normalizedQuery, mode: "insensitive" } },
+      { slug: { contains: normalizedQuery, mode: "insensitive" } },
+      {
+        author: {
+          displayName: {
+            contains: normalizedQuery,
+            mode: "insensitive",
+          },
+        },
+      },
+    ];
+  }
+
+  const stories = await prisma.story.findMany({
+    where,
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    include: {
+      stats: {
+        select: { readCount: true },
+      },
+      author: {
+        select: {
+          id: true,
+          displayName: true,
+          email: true,
+        },
+      },
+      storyGenres: {
+        include: {
+          genre: { select: { id: true, name: true, slug: true } },
+        },
+      },
+    },
+  });
+
+  return stories.map((story) => ({
+    ...formatStory(story),
+    author: story.author
+      ? {
+          id: story.author.id,
+          display_name: story.author.displayName,
+          email: story.author.email,
+        }
+      : null,
+  }));
+};
+
 const ensureStoryExists = async (storyId) => {
   const normalizedStoryId = normalizeText(storyId);
   if (!normalizedStoryId) throw new Error("Thiếu id truyện");
@@ -614,6 +675,7 @@ const deleteStory = async ({ storyId, requester }) => {
 module.exports = {
   createStory,
   getMyStories,
+  getAdminStories,
   searchStories,
   trackReadEvent,
   getStoryDetailBySlug,

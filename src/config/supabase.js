@@ -8,13 +8,16 @@ const supabaseAvatarBucket =
   "avatars";
 const supabaseStoryCoverBucket =
   process.env.SUPABASE_STORY_COVER_BUCKET || "story-covers";
+const supabaseHomeBannerBucket =
+  process.env.SUPABASE_HOME_BANNER_BUCKET || "home-banners";
 
 const isSupabaseStorageConfigured = () =>
   Boolean(
     supabaseUrl &&
       supabaseServiceRoleKey &&
       supabaseAvatarBucket &&
-      supabaseStoryCoverBucket,
+      supabaseStoryCoverBucket &&
+      supabaseHomeBannerBucket,
   );
 
 module.exports = {
@@ -22,5 +25,6 @@ module.exports = {
   supabaseServiceRoleKey,
   supabaseAvatarBucket,
   supabaseStoryCoverBucket,
+  supabaseHomeBannerBucket,
   isSupabaseStorageConfigured,
 };
