@@ -40,6 +40,14 @@ const normalizeStatus = (value, fallback = "draft") => {
   return normalized;
 };
 
+const normalizeMoveDirection = (value) => {
+  const normalized = normalizeText(value).toLowerCase();
+  if (normalized !== "up" && normalized !== "down") {
+    throw new Error("direction phải là up hoặc down");
+  }
+  return normalized;
+};
+
 const createChapter = async ({
   storyId,
   requester,
@@ -222,6 +230,62 @@ const updateChapter = async ({
   return formatChapter(updatedChapter);
 };
 
+const moveChapter = async ({ chapterId, requester, direction }) => {
+  const normalizedDirection = normalizeMoveDirection(direction);
+
+  const chapter = await prisma.chapter.findUnique({
+    where: { id: chapterId },
+    include: { story: { select: { id: true, authorId: true } } },
+  });
+  if (!chapter) throw new Error("Không tìm thấy chương");
+
+  ensureCanManageStory({ story: chapter.story, requester });
+
+  const neighbor = await prisma.chapter.findFirst({
+    where: {
+      storyId: chapter.storyId,
+      chapterNumber:
+        normalizedDirection === "up"
+          ? { lt: chapter.chapterNumber }
+          : { gt: chapter.chapterNumber },
+    },
+    orderBy: {
+      chapterNumber: normalizedDirection === "up" ? "desc" : "asc",
+    },
+  });
+
+  if (!neighbor) {
+    throw new Error(
+      normalizedDirection === "up"
+        ? "Chương này đã ở đầu danh sách"
+        : "Chương này đã ở cuối danh sách",
+    );
+  }
+
+  const maxChapterNumber = await prisma.chapter.aggregate({
+    where: { storyId: chapter.storyId },
+    _max: { chapterNumber: true },
+  });
+  const tempChapterNumber = (maxChapterNumber._max.chapterNumber || 0) + 1000;
+
+  await prisma.$transaction([
+    prisma.chapter.update({
+      where: { id: chapter.id },
+      data: { chapterNumber: tempChapterNumber },
+    }),
+    prisma.chapter.update({
+      where: { id: neighbor.id },
+      data: { chapterNumber: chapter.chapterNumber },
+    }),
+    prisma.chapter.update({
+      where: { id: chapter.id },
+      data: { chapterNumber: neighbor.chapterNumber },
+    }),
+  ]);
+
+  return { movedChapterId: chapter.id };
+};
+
 const deleteChapter = async ({ chapterId, requester }) => {
   const chapter = await prisma.chapter.findUnique({
     where: { id: chapterId },
@@ -240,5 +304,6 @@ module.exports = {
   getChaptersByStory,
   getChapterDetail,
   updateChapter,
+  moveChapter,
   deleteChapter,
 };

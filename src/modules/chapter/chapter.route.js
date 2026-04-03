@@ -26,6 +26,12 @@ router.patch(
   authorize("author", "admin"),
   chapterController.updateChapter,
 );
+router.post(
+  "/:id/move",
+  authenticate,
+  authorize("author", "admin"),
+  chapterController.moveChapter,
+);
 router.delete(
   "/:id",
   authenticate,

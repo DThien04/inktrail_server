@@ -69,6 +69,23 @@ const updateChapter = async (req, res) => {
   }
 };
 
+const moveChapter = async (req, res) => {
+  try {
+    const result = await chapterService.moveChapter({
+      chapterId: req.params.id,
+      requester: req.user,
+      direction: req.body.direction,
+    });
+
+    res.json({
+      message: "Đổi vị trí chương thành công",
+      ...result,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const deleteChapter = async (req, res) => {
   try {
     const result = await chapterService.deleteChapter({
@@ -87,5 +104,6 @@ module.exports = {
   getByStory,
   getById,
   updateChapter,
+  moveChapter,
   deleteChapter,
 };
