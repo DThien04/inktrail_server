@@ -1,19 +1,54 @@
 const prisma = require("../../config/prisma");
 const { uploadAvatarAndGetUrl } = require("../upload/upload.service");
 
-const formatUserProfile = (user) => ({
+const formatUserProfile = (user, stats = {}) => ({
   id: user.id,
   email: user.email,
   display_name: user.displayName,
   avatar_url: user.avatarUrl,
   bio: user.bio,
   role: user.role,
+  stories_read_count: stats.storiesReadCount ?? 0,
+  currently_reading_count: stats.currentlyReadingCount ?? 0,
+  favorite_count: stats.favoriteCount ?? 0,
 });
 
+const getProfileStats = async (userId) => {
+  const [user, distinctReadStories] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        _count: {
+          select: {
+            readingProgresses: true,
+            storyLikes: true,
+          },
+        },
+      },
+    }),
+    prisma.storyReadSession.findMany({
+      where: { userId },
+      distinct: ["storyId"],
+      select: { storyId: true },
+    }),
+  ]);
+
+  if (!user) return null;
+
+  return {
+    user,
+    stats: {
+      storiesReadCount: distinctReadStories.length,
+      currentlyReadingCount: user._count?.readingProgresses ?? 0,
+      favoriteCount: user._count?.storyLikes ?? 0,
+    },
+  };
+};
+
 const getMyProfile = async (userId) => {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error("Không tìm thấy người dùng");
-  return formatUserProfile(user);
+  const profileStats = await getProfileStats(userId);
+  if (!profileStats) throw new Error("Khong tim thay nguoi dung");
+  return formatUserProfile(profileStats.user, profileStats.stats);
 };
 
 const getProfileById = async (profileId) => {
@@ -29,7 +64,7 @@ const getProfileById = async (profileId) => {
     },
   });
 
-  if (!user) throw new Error("Không tìm thấy hồ sơ người dùng");
+  if (!user) throw new Error("Khong tim thay ho so nguoi dung");
 
   return {
     id: user.id,
@@ -50,22 +85,22 @@ const updateMyProfile = async ({
   avatarMimeType,
 }) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error("Không tìm thấy người dùng");
+  if (!user) throw new Error("Khong tim thay nguoi dung");
 
   const data = {};
 
   if (displayName !== undefined) {
     const normalizedDisplayName = String(displayName).trim();
-    if (!normalizedDisplayName) throw new Error("displayName không được để trống");
+    if (!normalizedDisplayName) throw new Error("displayName khong duoc de trong");
     if (normalizedDisplayName.length > 50) {
-      throw new Error("displayName tối đa 50 ký tự");
+      throw new Error("displayName toi da 50 ky tu");
     }
     data.displayName = normalizedDisplayName;
   }
 
   if (bio !== undefined) {
     const normalizedBio = String(bio).trim();
-    if (normalizedBio.length > 160) throw new Error("bio tối đa 160 ký tự");
+    if (normalizedBio.length > 160) throw new Error("bio toi da 160 ky tu");
     data.bio = normalizedBio || null;
   }
 
@@ -79,7 +114,7 @@ const updateMyProfile = async ({
   }
 
   if (!Object.keys(data).length) {
-    throw new Error("Không có dữ liệu hợp lệ để cập nhật");
+    throw new Error("Khong co du lieu hop le de cap nhat");
   }
 
   const updatedUser = await prisma.user.update({
@@ -87,10 +122,19 @@ const updateMyProfile = async ({
     data,
   });
 
-  return formatUserProfile(updatedUser);
+  const profileStats = await getProfileStats(updatedUser.id);
+  return formatUserProfile(
+    updatedUser,
+    profileStats?.stats,
+  );
 };
 
-const updateMyAvatar = async ({ userId, avatarBase64, avatarBuffer, avatarMimeType }) => {
+const updateMyAvatar = async ({
+  userId,
+  avatarBase64,
+  avatarBuffer,
+  avatarMimeType,
+}) => {
   const avatarUrl = await uploadAvatarAndGetUrl({
     userId,
     avatarBase64,
@@ -103,7 +147,11 @@ const updateMyAvatar = async ({ userId, avatarBase64, avatarBuffer, avatarMimeTy
     data: { avatarUrl },
   });
 
-  return formatUserProfile(updatedUser);
+  const profileStats = await getProfileStats(updatedUser.id);
+  return formatUserProfile(
+    updatedUser,
+    profileStats?.stats,
+  );
 };
 
 const deleteMyAvatar = async (userId) => {
@@ -112,7 +160,11 @@ const deleteMyAvatar = async (userId) => {
     data: { avatarUrl: null },
   });
 
-  return formatUserProfile(updatedUser);
+  const profileStats = await getProfileStats(updatedUser.id);
+  return formatUserProfile(
+    updatedUser,
+    profileStats?.stats,
+  );
 };
 
 const formatReadingProgress = (progress) => ({
@@ -176,9 +228,10 @@ const upsertMyReadingProgress = async ({
     lastChapterIndex,
     "last_chapter_index",
   );
-  const normalizedLastPosition = lastPosition === undefined || lastPosition === null
-    ? null
-    : parseNonNegativeInt(lastPosition, "last_position");
+  const normalizedLastPosition =
+    lastPosition === undefined || lastPosition === null
+      ? null
+      : parseNonNegativeInt(lastPosition, "last_position");
 
   const progress = await prisma.readingProgress.upsert({
     where: {

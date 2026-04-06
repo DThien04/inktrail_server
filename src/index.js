@@ -1,12 +1,15 @@
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const { port, web } = require("./config/jwt");
 
 const routes = require("./routes/index");
+const { initializeSocket } = require("./realtime/socket");
 
 const app = express();
+const server = http.createServer(app);
 const host = process.env.HOST || "0.0.0.0";
 
 app.use(helmet());
@@ -47,6 +50,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Lỗi server" });
 });
 
-app.listen(port, host, () => {
+initializeSocket(server);
+
+server.listen(port, host, () => {
   console.log(`Inktrail API running on http://${host}:${port}`);
 });

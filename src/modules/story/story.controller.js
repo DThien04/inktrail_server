@@ -86,6 +86,64 @@ const trackReadEvent = async (req, res) => {
   }
 };
 
+const likeStory = async (req, res) => {
+  try {
+    const result = await storyService.likeStory({
+      storyId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const unlikeStory = async (req, res) => {
+  try {
+    const result = await storyService.unlikeStory({
+      storyId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getComments = async (req, res) => {
+  try {
+    const result = await storyService.listStoryComments({
+      storyId: req.params.id,
+      requester: req.user || null,
+      sort: req.query.sort,
+      limit: req.query.limit,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const createComment = async (req, res) => {
+  try {
+    const comment = await storyService.createStoryComment({
+      storyId: req.params.id,
+      requester: req.user,
+      content: req.body.content,
+    });
+
+    res.status(201).json({
+      message: "Tạo bình luận thành công",
+      comment,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getBySlug = async (req, res) => {
   try {
     const story = await storyService.getStoryDetailBySlug({
@@ -146,6 +204,10 @@ module.exports = {
   getAdminStories,
   searchStories,
   trackReadEvent,
+  likeStory,
+  unlikeStory,
+  getComments,
+  createComment,
   getBySlug,
   updateStory,
   deleteStory,

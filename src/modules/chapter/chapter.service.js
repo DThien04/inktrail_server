@@ -1,8 +1,17 @@
 const prisma = require("../../config/prisma");
+const notificationService = require("../notification/notification.service");
+const { emitChapterComment } = require("../../realtime/socket");
 
 const ALLOWED_CHAPTER_STATUSES = new Set(["draft", "published"]);
 
 const normalizeText = (value) => String(value ?? "").trim();
+const getRequesterDisplayName = (requester) =>
+  normalizeText(
+    requester?.displayName ||
+      requester?.display_name ||
+      requester?.email ||
+      "Ai do",
+  );
 
 const formatChapter = (chapter) => ({
   id: chapter.id,
@@ -10,6 +19,7 @@ const formatChapter = (chapter) => ({
   chapter_number: chapter.chapterNumber,
   title: chapter.title,
   content: chapter.content,
+  like_count: typeof chapter.stats?.likeCount === "number" ? chapter.stats.likeCount : 0,
   status: chapter.status,
   published_at: chapter.publishedAt,
   created_at: chapter.createdAt,
@@ -46,6 +56,102 @@ const normalizeMoveDirection = (value) => {
     throw new Error("direction phải là up hoặc down");
   }
   return normalized;
+};
+
+const ensureChapterCanBeLiked = async ({ chapterId, requester }) => {
+  const normalizedChapterId = normalizeText(chapterId);
+  if (!normalizedChapterId) throw new Error("Thiáº¿u id chÆ°Æ¡ng");
+
+  const chapter = await prisma.chapter.findUnique({
+    where: { id: normalizedChapterId },
+    include: {
+      story: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          authorId: true,
+          status: true,
+        },
+      },
+    },
+  });
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
+
+  const isOwner = requester?.id && chapter.story.authorId === requester.id;
+  const isAdmin = requester?.role === "admin";
+  const canViewDraft = Boolean(isOwner || isAdmin);
+
+  if (chapter.story.status !== "published" && !canViewDraft) {
+    throw new Error("Truyá»‡n chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
+  }
+
+  if (chapter.status !== "published" && !canViewDraft) {
+    throw new Error("ChÆ°Æ¡ng chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
+  }
+
+  return chapter;
+};
+
+const ensureChapterCanBeCommented = async ({ chapterId, requester }) => {
+  const normalizedChapterId = normalizeText(chapterId);
+  if (!normalizedChapterId) throw new Error("Thiếu id chương");
+
+  const chapter = await prisma.chapter.findUnique({
+    where: { id: normalizedChapterId },
+    include: {
+      story: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          authorId: true,
+          status: true,
+        },
+      },
+    },
+  });
+  if (!chapter) throw new Error("Không tìm thấy chương");
+
+  const isOwner = requester?.id && chapter.story.authorId === requester.id;
+  const isAdmin = requester?.role === "admin";
+  const canViewDraft = Boolean(isOwner || isAdmin);
+
+  if (chapter.story.status !== "published" && !canViewDraft) {
+    throw new Error("Truyện chưa được xuất bản");
+  }
+
+  if (chapter.status !== "published" && !canViewDraft) {
+    throw new Error("Chương chưa được xuất bản");
+  }
+
+  return chapter;
+};
+
+const formatChapterComment = (comment, requester) => ({
+  id: comment.id,
+  user_id: comment.userId,
+  chapter_id: comment.chapterId,
+  content: comment.content,
+  is_edited: comment.isEdited,
+  created_at: comment.createdAt,
+  updated_at: comment.updatedAt,
+  is_mine: Boolean(requester?.id && comment.userId === requester.id),
+  user: {
+    id: comment.user.id,
+    display_name: comment.user.displayName,
+    avatar_url: comment.user.avatarUrl,
+    role: comment.user.role,
+  },
+});
+
+const validateCommentContent = (content) => {
+  const normalizedContent = normalizeText(content);
+  if (!normalizedContent) throw new Error("Nội dung bình luận không được để trống");
+  if (normalizedContent.length > 2000) {
+    throw new Error("Nội dung bình luận tối đa 2000 ký tự");
+  }
+  return normalizedContent;
 };
 
 const createChapter = async ({
@@ -116,15 +222,40 @@ const getChaptersByStory = async ({ storyId, requester }) => {
       ...(canViewDraft ? {} : { status: "published" }),
     },
     orderBy: { chapterNumber: "asc" },
+    include: {
+      stats: {
+        select: { likeCount: true },
+      },
+      likes: requester?.id
+        ? {
+            where: { userId: requester.id },
+            select: { id: true },
+            take: 1,
+          }
+        : false,
+    },
   });
 
-  return chapters.map(formatChapter);
+  return chapters.map((chapter) => ({
+    ...formatChapter(chapter),
+    is_liked: Array.isArray(chapter.likes) ? chapter.likes.length > 0 : false,
+  }));
 };
 
 const getChapterDetail = async ({ chapterId, requester }) => {
   const chapter = await prisma.chapter.findUnique({
     where: { id: chapterId },
     include: {
+      stats: {
+        select: { likeCount: true },
+      },
+      likes: requester?.id
+        ? {
+            where: { userId: requester.id },
+            select: { id: true },
+            take: 1,
+          }
+        : false,
       story: {
         select: {
           id: true,
@@ -147,6 +278,11 @@ const getChapterDetail = async ({ chapterId, requester }) => {
 
   return {
     ...formatChapter(chapter),
+    comment_count:
+      typeof chapter.stats?.commentCount === "number"
+        ? chapter.stats.commentCount
+        : 0,
+    is_liked: Array.isArray(chapter.likes) ? chapter.likes.length > 0 : false,
     story: {
       id: chapter.story.id,
       title: chapter.story.title,
@@ -154,6 +290,244 @@ const getChapterDetail = async ({ chapterId, requester }) => {
       status: chapter.story.status,
     },
   };
+};
+
+const listChapterComments = async ({ chapterId, requester, sort, limit }) => {
+  const chapter = await ensureChapterCanBeCommented({ chapterId, requester });
+  const normalizedSort = normalizeText(sort).toLowerCase();
+
+  let take = Number(limit);
+  if (!Number.isInteger(take) || take <= 0) take = 20;
+  take = Math.min(take, 100);
+
+  const orderBy =
+    normalizedSort === "oldest"
+      ? [{ createdAt: "asc" }, { id: "asc" }]
+      : [{ createdAt: "desc" }, { id: "desc" }];
+
+  const comments = await prisma.chapterComment.findMany({
+    where: { chapterId: chapter.id },
+    orderBy,
+    take,
+    include: {
+      user: {
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+    },
+  });
+
+  const commentCount = await prisma.chapterStat.findUnique({
+    where: { chapterId: chapter.id },
+    select: { commentCount: true },
+  });
+
+  return {
+    chapter: {
+      id: chapter.id,
+      chapter_number: chapter.chapterNumber,
+      title: chapter.title,
+    },
+    story: {
+      id: chapter.story.id,
+      title: chapter.story.title,
+      slug: chapter.story.slug,
+    },
+    total: commentCount?.commentCount ?? comments.length,
+    items: comments.map((comment) => formatChapterComment(comment, requester)),
+  };
+};
+
+const createChapterComment = async ({ chapterId, requester, content }) => {
+  if (!requester?.id) throw new Error("Chưa đăng nhập");
+
+  const chapter = await ensureChapterCanBeCommented({ chapterId, requester });
+  const normalizedContent = validateCommentContent(content);
+
+  const createdComment = await prisma.$transaction(async (tx) => {
+    const comment = await tx.chapterComment.create({
+      data: {
+        userId: requester.id,
+        chapterId: chapter.id,
+        content: normalizedContent,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    await tx.chapterStat.upsert({
+      where: { chapterId: chapter.id },
+      create: {
+        chapterId: chapter.id,
+        likeCount: 0,
+        commentCount: 1,
+      },
+      update: {
+        commentCount: { increment: 1 },
+      },
+    });
+
+    return comment;
+  });
+
+  const payload = formatChapterComment(createdComment, requester);
+  emitChapterComment(chapter.id, payload);
+
+  return payload;
+};
+
+const likeChapter = async ({ chapterId, requester }) => {
+  const chapter = await ensureChapterCanBeLiked({ chapterId, requester });
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existed = await tx.chapterLike.findUnique({
+      where: {
+        userId_chapterId: {
+          userId: requester.id,
+          chapterId: chapter.id,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existed) {
+      const stats = await tx.chapterStat.upsert({
+        where: { chapterId: chapter.id },
+        create: {
+          chapterId: chapter.id,
+          likeCount: 1,
+        },
+        update: {},
+        select: { likeCount: true },
+      });
+
+      return {
+        liked: true,
+        like_count: stats.likeCount,
+        should_notify: false,
+      };
+    }
+
+    await tx.chapterLike.create({
+      data: {
+        userId: requester.id,
+        chapterId: chapter.id,
+      },
+    });
+
+    const stats = await tx.chapterStat.upsert({
+      where: { chapterId: chapter.id },
+      create: {
+        chapterId: chapter.id,
+        likeCount: 1,
+      },
+      update: {
+        likeCount: { increment: 1 },
+      },
+      select: { likeCount: true },
+    });
+
+    return {
+      liked: true,
+      like_count: stats.likeCount,
+      should_notify: true,
+    };
+  });
+
+  if (result.should_notify && requester.id !== chapter.story.authorId) {
+    await notificationService.createNotification({
+      recipientId: chapter.story.authorId,
+      actorId: requester.id,
+      storyId: chapter.story.id,
+      chapterId: chapter.id,
+      type: "chapter_liked",
+      title: `${getRequesterDisplayName(requester)} đã thích chương ${chapter.chapterNumber} của truyện ${chapter.story.title}`,
+      body: chapter.title,
+      linkUrl: `/stories/${chapter.story.slug}/chapters/${chapter.id}`,
+      meta: {
+        story_title: chapter.story.title,
+        chapter_number: chapter.chapterNumber,
+        chapter_title: chapter.title,
+      },
+    });
+  }
+
+  return {
+    liked: result.liked,
+    like_count: result.like_count,
+  };
+};
+
+const unlikeChapter = async ({ chapterId, requester }) => {
+  const chapter = await ensureChapterCanBeLiked({ chapterId, requester });
+
+  return prisma.$transaction(async (tx) => {
+    const existed = await tx.chapterLike.findUnique({
+      where: {
+        userId_chapterId: {
+          userId: requester.id,
+          chapterId: chapter.id,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!existed) {
+      const stats = await tx.chapterStat.findUnique({
+        where: { chapterId: chapter.id },
+        select: { likeCount: true },
+      });
+
+      return {
+        liked: false,
+        like_count: stats?.likeCount ?? 0,
+      };
+    }
+
+    await tx.chapterLike.delete({
+      where: {
+        userId_chapterId: {
+          userId: requester.id,
+          chapterId: chapter.id,
+        },
+      },
+    });
+
+    const currentStats = await tx.chapterStat.findUnique({
+      where: { chapterId: chapter.id },
+      select: { likeCount: true },
+    });
+
+    if (!currentStats) {
+      return {
+        liked: false,
+        like_count: 0,
+      };
+    }
+
+    const updatedStats = await tx.chapterStat.update({
+      where: { chapterId: chapter.id },
+      data: { likeCount: Math.max(0, currentStats.likeCount - 1) },
+      select: { likeCount: true },
+    });
+
+    return {
+      liked: false,
+      like_count: updatedStats.likeCount,
+    };
+  });
 };
 
 const updateChapter = async ({
@@ -303,6 +677,10 @@ module.exports = {
   createChapter,
   getChaptersByStory,
   getChapterDetail,
+  likeChapter,
+  unlikeChapter,
+  listChapterComments,
+  createChapterComment,
   updateChapter,
   moveChapter,
   deleteChapter,

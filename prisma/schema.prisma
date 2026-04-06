@@ -18,10 +18,16 @@ model User {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  refreshTokens RefreshToken[]
-  stories       Story[]
-  readingProgresses ReadingProgress[]
-  readSessions  StoryReadSession[]
+  refreshTokens         RefreshToken[]
+  stories               Story[]
+  storyLikes            StoryLike[]
+  chapterLikes          ChapterLike[]
+  storyComments         StoryComment[]
+  chapterComments       ChapterComment[]
+  readingProgresses     ReadingProgress[]
+  readSessions          StoryReadSession[]
+  notificationsReceived Notification[] @relation("UserNotifications")
+  notificationsSent     Notification[] @relation("NotificationActor")
 
   @@map("users")
 }
@@ -51,11 +57,14 @@ model Story {
 
   author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
   chapters    Chapter[]
+  likes       StoryLike[]
+  comments    StoryComment[]
   homeBanner  HomeBanner?
   storyGenres StoryGenre[]
   readingProgresses ReadingProgress[]
   readSessions StoryReadSession[]
   stats       StoryStat?
+  notifications Notification[]
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -104,12 +113,26 @@ model StoryReadSession {
 model StoryStat {
   storyId    String   @id @map("story_id")
   readCount  Int      @default(0) @map("read_count")
+  likeCount  Int      @default(0) @map("like_count")
+  commentCount Int    @default(0) @map("comment_count")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@map("story_stats")
+}
+
+model ChapterStat {
+  chapterId   String   @id @map("chapter_id")
+  likeCount   Int      @default(0) @map("like_count")
+  commentCount Int     @default(0) @map("comment_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@map("chapter_stats")
 }
 
 model Chapter {
@@ -124,10 +147,122 @@ model Chapter {
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  stats ChapterStat?
+  likes ChapterLike[]
+  comments ChapterComment[]
+  notifications Notification[]
 
   @@unique([storyId, chapterNumber])
   @@index([storyId, status])
   @@map("chapters")
+}
+
+model StoryLike {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  storyId   String   @map("story_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+  @@index([storyId])
+  @@index([userId])
+  @@map("story_likes")
+}
+
+model ChapterLike {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  chapterId String   @map("chapter_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chapterId])
+  @@index([chapterId])
+  @@index([userId])
+  @@map("chapter_likes")
+}
+
+model StoryComment {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  storyId   String   @map("story_id")
+  content   String
+  isEdited  Boolean  @default(false) @map("is_edited")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, createdAt])
+  @@index([userId, createdAt])
+  @@map("story_comments")
+}
+
+model ChapterComment {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  chapterId String   @map("chapter_id")
+  content   String
+  isEdited  Boolean  @default(false) @map("is_edited")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([chapterId, createdAt])
+  @@index([userId, createdAt])
+  @@map("chapter_comments")
+}
+
+model Notification {
+  id          String            @id @default(uuid())
+  recipientId String            @map("recipient_id")
+  actorId     String?           @map("actor_id")
+  storyId     String?           @map("story_id")
+  chapterId   String?           @map("chapter_id")
+  type        NotificationType
+  title       String
+  body        String?
+  linkUrl     String?           @map("link_url")
+  meta        Json?
+  isRead      Boolean           @default(false) @map("is_read")
+  readAt      DateTime?         @map("read_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  recipient User    @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User?   @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  story     Story?  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  chapter   Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([actorId])
+  @@index([storyId])
+  @@index([chapterId])
+  @@map("notifications")
+}
+
+model Announcement {
+  id          String           @id @default(uuid())
+  title       String
+  body        String?
+  linkUrl     String?          @map("link_url")
+  type        AnnouncementType @default(system)
+  isActive    Boolean          @default(true) @map("is_active")
+  publishedAt DateTime         @default(now()) @map("published_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([isActive, publishedAt])
+  @@map("announcements")
 }
 
 model Genre {
@@ -188,4 +323,21 @@ enum StoryStatus {
 enum ChapterStatus {
   draft
   published
+}
+
+enum NotificationType {
+  system
+  story_liked
+  chapter_liked
+  story_commented
+  chapter_published
+  story_published
+  admin_message
+}
+
+enum AnnouncementType {
+  system
+  release
+  event
+  maintenance
 }

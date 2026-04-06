@@ -20,6 +20,10 @@ router.get(
 );
 router.get("/search", storyController.searchStories);
 router.post("/:id/read-event", authenticateOptional, storyController.trackReadEvent);
+router.post("/:id/like", authenticate, storyController.likeStory);
+router.delete("/:id/like", authenticate, storyController.unlikeStory);
+router.get("/:id/comments", authenticateOptional, storyController.getComments);
+router.post("/:id/comments", authenticate, storyController.createComment);
 router.post(
   "/",
   authenticate,

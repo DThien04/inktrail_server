@@ -48,6 +48,64 @@ const getById = async (req, res) => {
   }
 };
 
+const likeChapter = async (req, res) => {
+  try {
+    const result = await chapterService.likeChapter({
+      chapterId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const unlikeChapter = async (req, res) => {
+  try {
+    const result = await chapterService.unlikeChapter({
+      chapterId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getComments = async (req, res) => {
+  try {
+    const result = await chapterService.listChapterComments({
+      chapterId: req.params.id,
+      requester: req.user || null,
+      sort: req.query.sort,
+      limit: req.query.limit,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const createComment = async (req, res) => {
+  try {
+    const comment = await chapterService.createChapterComment({
+      chapterId: req.params.id,
+      requester: req.user,
+      content: req.body.content,
+    });
+
+    res.status(201).json({
+      message: "Tạo bình luận thành công",
+      comment,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const updateChapter = async (req, res) => {
   try {
     const { chapter_number, title, content, status } = req.body;
@@ -103,6 +161,10 @@ module.exports = {
   createChapter,
   getByStory,
   getById,
+  likeChapter,
+  unlikeChapter,
+  getComments,
+  createComment,
   updateChapter,
   moveChapter,
   deleteChapter,

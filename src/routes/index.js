@@ -4,6 +4,8 @@ const router = express.Router();
 router.use("/auth", require("../modules/auth/auth.route"));
 router.use("/upload", require("../modules/upload/upload.route"));
 router.use("/profile", require("../modules/profile/profile.route"));
+router.use("/notifications", require("../modules/notification/notification.route"));
+router.use("/announcements", require("../modules/announcement/announcement.route"));
 router.use("/stories", require("../modules/story/story.route"));
 router.use("/chapters", require("../modules/chapter/chapter.route"));
 router.use("/genres", require("../modules/genre/genre.route"));
