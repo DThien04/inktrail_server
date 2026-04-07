@@ -144,6 +144,32 @@ const createComment = async (req, res) => {
   }
 };
 
+const likeComment = async (req, res) => {
+  try {
+    const result = await storyService.likeStoryComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const unlikeComment = async (req, res) => {
+  try {
+    const result = await storyService.unlikeStoryComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getBySlug = async (req, res) => {
   try {
     const story = await storyService.getStoryDetailBySlug({
@@ -208,6 +234,8 @@ module.exports = {
   unlikeStory,
   getComments,
   createComment,
+  likeComment,
+  unlikeComment,
   getBySlug,
   updateStory,
   deleteStory,

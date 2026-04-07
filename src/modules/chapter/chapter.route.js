@@ -14,6 +14,16 @@ const authenticateOptional = (req, _res, next) => {
 router.get("/stories/:storyId/chapters", authenticateOptional, chapterController.getByStory);
 router.get("/:id/comments", authenticateOptional, chapterController.getComments);
 router.post("/:id/comments", authenticate, chapterController.createComment);
+router.post(
+  "/comments/:commentId/like",
+  authenticate,
+  chapterController.likeComment,
+);
+router.delete(
+  "/comments/:commentId/like",
+  authenticate,
+  chapterController.unlikeComment,
+);
 router.get("/:id", authenticateOptional, chapterController.getById);
 router.post("/:id/like", authenticate, chapterController.likeChapter);
 router.delete("/:id/like", authenticate, chapterController.unlikeChapter);

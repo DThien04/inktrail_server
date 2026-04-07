@@ -24,6 +24,8 @@ model User {
   chapterLikes          ChapterLike[]
   storyComments         StoryComment[]
   chapterComments       ChapterComment[]
+  storyCommentLikes     StoryCommentLike[]
+  chapterCommentLikes   ChapterCommentLike[]
   readingProgresses     ReadingProgress[]
   readSessions          StoryReadSession[]
   notificationsReceived Notification[] @relation("UserNotifications")
@@ -198,6 +200,8 @@ model StoryComment {
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  likes StoryCommentLike[]
+  stats StoryCommentStat?
 
   @@index([storyId, createdAt])
   @@index([userId, createdAt])
@@ -215,10 +219,64 @@ model ChapterComment {
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  likes   ChapterCommentLike[]
+  stats   ChapterCommentStat?
 
   @@index([chapterId, createdAt])
   @@index([userId, createdAt])
   @@map("chapter_comments")
+}
+
+model StoryCommentLike {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  commentId String   @map("comment_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment StoryComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+  @@index([userId])
+  @@map("story_comment_likes")
+}
+
+model ChapterCommentLike {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  commentId String   @map("comment_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+  @@index([userId])
+  @@map("chapter_comment_likes")
+}
+
+model StoryCommentStat {
+  commentId   String   @id @map("comment_id")
+  likeCount   Int      @default(0) @map("like_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  comment StoryComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@map("story_comment_stats")
+}
+
+model ChapterCommentStat {
+  commentId   String   @id @map("comment_id")
+  likeCount   Int      @default(0) @map("like_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@map("chapter_comment_stats")
 }
 
 model Notification {

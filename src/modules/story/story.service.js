@@ -384,10 +384,13 @@ const formatStoryComment = (comment, requester) => ({
   user_id: comment.userId,
   story_id: comment.storyId,
   content: comment.content,
+  like_count:
+    typeof comment.stats?.likeCount === "number" ? comment.stats.likeCount : 0,
   is_edited: comment.isEdited,
   created_at: comment.createdAt,
   updated_at: comment.updatedAt,
   is_mine: Boolean(requester?.id && comment.userId === requester.id),
+  is_liked: Array.isArray(comment.likes) ? comment.likes.length > 0 : false,
   user: {
     id: comment.user.id,
     display_name: comment.user.displayName,
@@ -789,6 +792,16 @@ const listStoryComments = async ({ storyId, requester, sort, limit }) => {
     orderBy,
     take,
     include: {
+      stats: {
+        select: { likeCount: true },
+      },
+      likes: requester?.id
+        ? {
+            where: { userId: requester.id },
+            select: { id: true },
+            take: 1,
+          }
+        : false,
       user: {
         select: {
           id: true,
@@ -814,6 +827,36 @@ const listStoryComments = async ({ storyId, requester, sort, limit }) => {
     total: commentCount?.commentCount ?? comments.length,
     items: comments.map((comment) => formatStoryComment(comment, requester)),
   };
+};
+
+const ensureStoryCommentCanBeLiked = async ({ commentId, requester }) => {
+  const normalizedCommentId = normalizeText(commentId);
+  if (!normalizedCommentId) throw new Error("Thiếu id bình luận");
+
+  const comment = await prisma.storyComment.findUnique({
+    where: { id: normalizedCommentId },
+    include: {
+      story: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          authorId: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!comment) throw new Error("Không tìm thấy bình luận");
+
+  const isOwner = requester?.id && comment.story.authorId === requester.id;
+  const isAdmin = requester?.role === "admin";
+  if (comment.story.status !== "published" && !isOwner && !isAdmin) {
+    throw new Error("Truyện chưa được xuất bản");
+  }
+
+  return comment;
 };
 
 const createStoryComment = async ({ storyId, requester, content }) => {
@@ -877,6 +920,123 @@ const createStoryComment = async ({ storyId, requester, content }) => {
   }
 
   return payload;
+};
+
+const likeStoryComment = async ({ commentId, requester }) => {
+  const comment = await ensureStoryCommentCanBeLiked({ commentId, requester });
+
+  return prisma.$transaction(async (tx) => {
+    const existed = await tx.storyCommentLike.findUnique({
+      where: {
+        userId_commentId: {
+          userId: requester.id,
+          commentId: comment.id,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existed) {
+      const stats = await tx.storyCommentStat.upsert({
+        where: { commentId: comment.id },
+        create: {
+          commentId: comment.id,
+          likeCount: 1,
+        },
+        update: {},
+        select: { likeCount: true },
+      });
+
+      return {
+        liked: true,
+        like_count: stats.likeCount,
+      };
+    }
+
+    await tx.storyCommentLike.create({
+      data: {
+        userId: requester.id,
+        commentId: comment.id,
+      },
+    });
+
+    const stats = await tx.storyCommentStat.upsert({
+      where: { commentId: comment.id },
+      create: {
+        commentId: comment.id,
+        likeCount: 1,
+      },
+      update: {
+        likeCount: { increment: 1 },
+      },
+      select: { likeCount: true },
+    });
+
+    return {
+      liked: true,
+      like_count: stats.likeCount,
+    };
+  });
+};
+
+const unlikeStoryComment = async ({ commentId, requester }) => {
+  const comment = await ensureStoryCommentCanBeLiked({ commentId, requester });
+
+  return prisma.$transaction(async (tx) => {
+    const existed = await tx.storyCommentLike.findUnique({
+      where: {
+        userId_commentId: {
+          userId: requester.id,
+          commentId: comment.id,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!existed) {
+      const stats = await tx.storyCommentStat.findUnique({
+        where: { commentId: comment.id },
+        select: { likeCount: true },
+      });
+
+      return {
+        liked: false,
+        like_count: stats?.likeCount ?? 0,
+      };
+    }
+
+    await tx.storyCommentLike.delete({
+      where: {
+        userId_commentId: {
+          userId: requester.id,
+          commentId: comment.id,
+        },
+      },
+    });
+
+    const currentStats = await tx.storyCommentStat.findUnique({
+      where: { commentId: comment.id },
+      select: { likeCount: true },
+    });
+
+    if (!currentStats) {
+      return {
+        liked: false,
+        like_count: 0,
+      };
+    }
+
+    const updatedStats = await tx.storyCommentStat.update({
+      where: { commentId: comment.id },
+      data: { likeCount: Math.max(0, currentStats.likeCount - 1) },
+      select: { likeCount: true },
+    });
+
+    return {
+      liked: false,
+      like_count: updatedStats.likeCount,
+    };
+  });
 };
 
 const updateStory = async ({
@@ -1029,6 +1189,8 @@ module.exports = {
   unlikeStory,
   listStoryComments,
   createStoryComment,
+  likeStoryComment,
+  unlikeStoryComment,
   getStoryDetailBySlug,
   updateStory,
   deleteStory,

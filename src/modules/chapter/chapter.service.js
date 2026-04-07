@@ -133,10 +133,13 @@ const formatChapterComment = (comment, requester) => ({
   user_id: comment.userId,
   chapter_id: comment.chapterId,
   content: comment.content,
+  like_count:
+    typeof comment.stats?.likeCount === "number" ? comment.stats.likeCount : 0,
   is_edited: comment.isEdited,
   created_at: comment.createdAt,
   updated_at: comment.updatedAt,
   is_mine: Boolean(requester?.id && comment.userId === requester.id),
+  is_liked: Array.isArray(comment.likes) ? comment.likes.length > 0 : false,
   user: {
     id: comment.user.id,
     display_name: comment.user.displayName,
@@ -224,7 +227,7 @@ const getChaptersByStory = async ({ storyId, requester }) => {
     orderBy: { chapterNumber: "asc" },
     include: {
       stats: {
-        select: { likeCount: true },
+        select: { likeCount: true, commentCount: true },
       },
       likes: requester?.id
         ? {
@@ -238,6 +241,10 @@ const getChaptersByStory = async ({ storyId, requester }) => {
 
   return chapters.map((chapter) => ({
     ...formatChapter(chapter),
+    comment_count:
+      typeof chapter.stats?.commentCount === "number"
+        ? chapter.stats.commentCount
+        : 0,
     is_liked: Array.isArray(chapter.likes) ? chapter.likes.length > 0 : false,
   }));
 };
@@ -247,7 +254,7 @@ const getChapterDetail = async ({ chapterId, requester }) => {
     where: { id: chapterId },
     include: {
       stats: {
-        select: { likeCount: true },
+        select: { likeCount: true, commentCount: true },
       },
       likes: requester?.id
         ? {
@@ -310,6 +317,16 @@ const listChapterComments = async ({ chapterId, requester, sort, limit }) => {
     orderBy,
     take,
     include: {
+      stats: {
+        select: { likeCount: true },
+      },
+      likes: requester?.id
+        ? {
+            where: { userId: requester.id },
+            select: { id: true },
+            take: 1,
+          }
+        : false,
       user: {
         select: {
           id: true,
@@ -340,6 +357,46 @@ const listChapterComments = async ({ chapterId, requester, sort, limit }) => {
     total: commentCount?.commentCount ?? comments.length,
     items: comments.map((comment) => formatChapterComment(comment, requester)),
   };
+};
+
+const ensureChapterCommentCanBeLiked = async ({ commentId, requester }) => {
+  const normalizedCommentId = normalizeText(commentId);
+  if (!normalizedCommentId) throw new Error("Thiếu id bình luận");
+
+  const comment = await prisma.chapterComment.findUnique({
+    where: { id: normalizedCommentId },
+    include: {
+      chapter: {
+        include: {
+          story: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              authorId: true,
+              status: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!comment) throw new Error("Không tìm thấy bình luận");
+
+  const isOwner = requester?.id && comment.chapter.story.authorId === requester.id;
+  const isAdmin = requester?.role === "admin";
+  const canViewDraft = Boolean(isOwner || isAdmin);
+
+  if (comment.chapter.story.status !== "published" && !canViewDraft) {
+    throw new Error("Truyện chưa được xuất bản");
+  }
+
+  if (comment.chapter.status !== "published" && !canViewDraft) {
+    throw new Error("Chương chưa được xuất bản");
+  }
+
+  return comment;
 };
 
 const createChapterComment = async ({ chapterId, requester, content }) => {
@@ -386,6 +443,123 @@ const createChapterComment = async ({ chapterId, requester, content }) => {
   emitChapterComment(chapter.id, payload);
 
   return payload;
+};
+
+const likeChapterComment = async ({ commentId, requester }) => {
+  const comment = await ensureChapterCommentCanBeLiked({ commentId, requester });
+
+  return prisma.$transaction(async (tx) => {
+    const existed = await tx.chapterCommentLike.findUnique({
+      where: {
+        userId_commentId: {
+          userId: requester.id,
+          commentId: comment.id,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existed) {
+      const stats = await tx.chapterCommentStat.upsert({
+        where: { commentId: comment.id },
+        create: {
+          commentId: comment.id,
+          likeCount: 1,
+        },
+        update: {},
+        select: { likeCount: true },
+      });
+
+      return {
+        liked: true,
+        like_count: stats.likeCount,
+      };
+    }
+
+    await tx.chapterCommentLike.create({
+      data: {
+        userId: requester.id,
+        commentId: comment.id,
+      },
+    });
+
+    const stats = await tx.chapterCommentStat.upsert({
+      where: { commentId: comment.id },
+      create: {
+        commentId: comment.id,
+        likeCount: 1,
+      },
+      update: {
+        likeCount: { increment: 1 },
+      },
+      select: { likeCount: true },
+    });
+
+    return {
+      liked: true,
+      like_count: stats.likeCount,
+    };
+  });
+};
+
+const unlikeChapterComment = async ({ commentId, requester }) => {
+  const comment = await ensureChapterCommentCanBeLiked({ commentId, requester });
+
+  return prisma.$transaction(async (tx) => {
+    const existed = await tx.chapterCommentLike.findUnique({
+      where: {
+        userId_commentId: {
+          userId: requester.id,
+          commentId: comment.id,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!existed) {
+      const stats = await tx.chapterCommentStat.findUnique({
+        where: { commentId: comment.id },
+        select: { likeCount: true },
+      });
+
+      return {
+        liked: false,
+        like_count: stats?.likeCount ?? 0,
+      };
+    }
+
+    await tx.chapterCommentLike.delete({
+      where: {
+        userId_commentId: {
+          userId: requester.id,
+          commentId: comment.id,
+        },
+      },
+    });
+
+    const currentStats = await tx.chapterCommentStat.findUnique({
+      where: { commentId: comment.id },
+      select: { likeCount: true },
+    });
+
+    if (!currentStats) {
+      return {
+        liked: false,
+        like_count: 0,
+      };
+    }
+
+    const updatedStats = await tx.chapterCommentStat.update({
+      where: { commentId: comment.id },
+      data: { likeCount: Math.max(0, currentStats.likeCount - 1) },
+      select: { likeCount: true },
+    });
+
+    return {
+      liked: false,
+      like_count: updatedStats.likeCount,
+    };
+  });
 };
 
 const likeChapter = async ({ chapterId, requester }) => {
@@ -681,6 +855,8 @@ module.exports = {
   unlikeChapter,
   listChapterComments,
   createChapterComment,
+  likeChapterComment,
+  unlikeChapterComment,
   updateChapter,
   moveChapter,
   deleteChapter,

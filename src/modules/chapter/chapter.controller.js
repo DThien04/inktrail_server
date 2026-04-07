@@ -106,6 +106,32 @@ const createComment = async (req, res) => {
   }
 };
 
+const likeComment = async (req, res) => {
+  try {
+    const result = await chapterService.likeChapterComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const unlikeComment = async (req, res) => {
+  try {
+    const result = await chapterService.unlikeChapterComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const updateChapter = async (req, res) => {
   try {
     const { chapter_number, title, content, status } = req.body;
@@ -165,6 +191,8 @@ module.exports = {
   unlikeChapter,
   getComments,
   createComment,
+  likeComment,
+  unlikeComment,
   updateChapter,
   moveChapter,
   deleteChapter,

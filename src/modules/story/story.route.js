@@ -25,6 +25,16 @@ router.delete("/:id/like", authenticate, storyController.unlikeStory);
 router.get("/:id/comments", authenticateOptional, storyController.getComments);
 router.post("/:id/comments", authenticate, storyController.createComment);
 router.post(
+  "/comments/:commentId/like",
+  authenticate,
+  storyController.likeComment,
+);
+router.delete(
+  "/comments/:commentId/like",
+  authenticate,
+  storyController.unlikeComment,
+);
+router.post(
   "/",
   authenticate,
   authorize("author", "admin"),
