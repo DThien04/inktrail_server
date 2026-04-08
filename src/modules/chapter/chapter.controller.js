@@ -132,6 +132,62 @@ const unlikeComment = async (req, res) => {
   }
 };
 
+const updateComment = async (req, res) => {
+  try {
+    const comment = await chapterService.updateChapterComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+      content: req.body.content,
+    });
+
+    res.json({
+      message: "Cap nhat binh luan thanh cong",
+      comment,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const deleteComment = async (req, res) => {
+  try {
+    const result = await chapterService.deleteChapterComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getFeaturedComment = async (req, res) => {
+  try {
+    const result = await chapterService.getChapterFeaturedComment({
+      chapterId: req.params.id,
+      requester: req.user || null,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const recomputeFeaturedComment = async (req, res) => {
+  try {
+    const result = await chapterService.recomputeChapterFeaturedByChapterId({
+      chapterId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const updateChapter = async (req, res) => {
   try {
     const { chapter_number, title, content, status } = req.body;
@@ -193,6 +249,10 @@ module.exports = {
   createComment,
   likeComment,
   unlikeComment,
+  updateComment,
+  deleteComment,
+  getFeaturedComment,
+  recomputeFeaturedComment,
   updateChapter,
   moveChapter,
   deleteChapter,

@@ -28,8 +28,8 @@ model User {
   chapterCommentLikes   ChapterCommentLike[]
   readingProgresses     ReadingProgress[]
   readSessions          StoryReadSession[]
-  notificationsReceived Notification[] @relation("UserNotifications")
-  notificationsSent     Notification[] @relation("NotificationActor")
+  notificationsReceived Notification[]       @relation("UserNotifications")
+  notificationsSent     Notification[]       @relation("NotificationActor")
 
   @@map("users")
 }
@@ -57,16 +57,17 @@ model Story {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  chapters    Chapter[]
-  likes       StoryLike[]
-  comments    StoryComment[]
-  homeBanner  HomeBanner?
-  storyGenres StoryGenre[]
+  author            User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  chapters          Chapter[]
+  likes             StoryLike[]
+  comments          StoryComment[]
+  homeBanner        HomeBanner?
+  storyGenres       StoryGenre[]
   readingProgresses ReadingProgress[]
-  readSessions StoryReadSession[]
-  stats       StoryStat?
-  notifications Notification[]
+  readSessions      StoryReadSession[]
+  stats             StoryStat?
+  featuredComments  StoryFeaturedComment[]
+  notifications     Notification[]
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -92,16 +93,16 @@ model ReadingProgress {
 }
 
 model StoryReadSession {
-  id                 String   @id @default(uuid())
-  storyId            String   @map("story_id")
-  userId             String?  @map("user_id")
-  deviceId           String?  @map("device_id")
-  chapterIndex       Int      @default(0) @map("chapter_index")
-  timeSpentSeconds   Int      @default(0) @map("time_spent_seconds")
-  maxScrollPercent   Int      @default(0) @map("max_scroll_percent")
-  countedAt          DateTime @default(now()) @map("counted_at")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  storyId          String   @map("story_id")
+  userId           String?  @map("user_id")
+  deviceId         String?  @map("device_id")
+  chapterIndex     Int      @default(0) @map("chapter_index")
+  timeSpentSeconds Int      @default(0) @map("time_spent_seconds")
+  maxScrollPercent Int      @default(0) @map("max_scroll_percent")
+  countedAt        DateTime @default(now()) @map("counted_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
   user  User? @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -113,12 +114,12 @@ model StoryReadSession {
 }
 
 model StoryStat {
-  storyId    String   @id @map("story_id")
-  readCount  Int      @default(0) @map("read_count")
-  likeCount  Int      @default(0) @map("like_count")
-  commentCount Int    @default(0) @map("comment_count")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  storyId      String   @id @map("story_id")
+  readCount    Int      @default(0) @map("read_count")
+  likeCount    Int      @default(0) @map("like_count")
+  commentCount Int      @default(0) @map("comment_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
@@ -126,11 +127,11 @@ model StoryStat {
 }
 
 model ChapterStat {
-  chapterId   String   @id @map("chapter_id")
-  likeCount   Int      @default(0) @map("like_count")
-  commentCount Int     @default(0) @map("comment_count")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  chapterId    String   @id @map("chapter_id")
+  likeCount    Int      @default(0) @map("like_count")
+  commentCount Int      @default(0) @map("comment_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
@@ -148,11 +149,12 @@ model Chapter {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  stats ChapterStat?
-  likes ChapterLike[]
-  comments ChapterComment[]
-  notifications Notification[]
+  story           Story                   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  stats           ChapterStat?
+  likes           ChapterLike[]
+  comments        ChapterComment[]
+  featuredComment ChapterFeaturedComment?
+  notifications   Notification[]
 
   @@unique([storyId, chapterNumber])
   @@index([storyId, status])
@@ -198,10 +200,11 @@ model StoryComment {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  likes StoryCommentLike[]
-  stats StoryCommentStat?
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story             Story                  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  likes             StoryCommentLike[]
+  stats             StoryCommentStat?
+  featuredInStories StoryFeaturedComment[]
 
   @@index([storyId, createdAt])
   @@index([userId, createdAt])
@@ -217,10 +220,11 @@ model ChapterComment {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  likes   ChapterCommentLike[]
-  stats   ChapterCommentStat?
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter           Chapter                 @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  likes             ChapterCommentLike[]
+  stats             ChapterCommentStat?
+  featuredInChapter ChapterFeaturedComment?
 
   @@index([chapterId, createdAt])
   @@index([userId, createdAt])
@@ -258,10 +262,10 @@ model ChapterCommentLike {
 }
 
 model StoryCommentStat {
-  commentId   String   @id @map("comment_id")
-  likeCount   Int      @default(0) @map("like_count")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  commentId String   @id @map("comment_id")
+  likeCount Int      @default(0) @map("like_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   comment StoryComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
@@ -269,35 +273,74 @@ model StoryCommentStat {
 }
 
 model ChapterCommentStat {
-  commentId   String   @id @map("comment_id")
-  likeCount   Int      @default(0) @map("like_count")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  commentId String   @id @map("comment_id")
+  likeCount Int      @default(0) @map("like_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   @@map("chapter_comment_stats")
 }
 
+model StoryFeaturedComment {
+  id         String   @id @default(uuid())
+  storyId    String   @map("story_id")
+  commentId  String   @map("comment_id")
+  rank       Int
+  score      Float    @default(0)
+  reason     String?
+  computedAt DateTime @default(now()) @map("computed_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  story   Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  comment StoryComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, commentId])
+  @@unique([storyId, rank])
+  @@index([storyId, rank])
+  @@index([score])
+  @@index([computedAt])
+  @@map("story_featured_comments")
+}
+
+model ChapterFeaturedComment {
+  chapterId  String   @id @map("chapter_id")
+  commentId  String   @unique @map("comment_id")
+  score      Float    @default(0)
+  reason     String?
+  computedAt DateTime @default(now()) @map("computed_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  chapter Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([score])
+  @@index([computedAt])
+  @@map("chapter_featured_comments")
+}
+
 model Notification {
-  id          String            @id @default(uuid())
-  recipientId String            @map("recipient_id")
-  actorId     String?           @map("actor_id")
-  storyId     String?           @map("story_id")
-  chapterId   String?           @map("chapter_id")
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  actorId     String?          @map("actor_id")
+  storyId     String?          @map("story_id")
+  chapterId   String?          @map("chapter_id")
   type        NotificationType
   title       String
   body        String?
-  linkUrl     String?           @map("link_url")
+  linkUrl     String?          @map("link_url")
   meta        Json?
-  isRead      Boolean           @default(false) @map("is_read")
-  readAt      DateTime?         @map("read_at")
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
+  isRead      Boolean          @default(false) @map("is_read")
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
 
-  recipient User    @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
-  actor     User?   @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
-  story     Story?  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  recipient User     @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  story     Story?   @relation(fields: [storyId], references: [id], onDelete: Cascade)
   chapter   Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   @@index([recipientId, isRead, createdAt])
@@ -352,13 +395,13 @@ model StoryGenre {
 }
 
 model HomeBanner {
-  id        String   @id @default(uuid())
-  storyId   String   @unique @map("story_id")
-  bannerImageUrl String? @map("banner_image_url")
-  sortOrder Int      @default(0) @map("sort_order")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             String   @id @default(uuid())
+  storyId        String   @unique @map("story_id")
+  bannerImageUrl String?  @map("banner_image_url")
+  sortOrder      Int      @default(0) @map("sort_order")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
 

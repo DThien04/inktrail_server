@@ -1,6 +1,10 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
 const { emitStoryComment } = require("../../realtime/socket");
+const {
+  recomputeStoryFeaturedComments: recomputeStoryFeaturedRanking,
+  getStoryFeaturedCommentIds,
+} = require("../comment/comment-featured.service");
 const {
   uploadStoryCoverAndGetUrl,
   deleteFileByPublicUrl,
@@ -76,13 +80,49 @@ const formatStory = (story) => ({
     : [],
 });
 
+const formatStoryCard = (story, requester) => ({
+  ...formatStory(story),
+  chapter_count: typeof story._count?.chapters === "number" ? story._count.chapters : 0,
+  is_liked: Array.isArray(story.likes) ? story.likes.length > 0 : false,
+  author: story.author
+    ? {
+        id: story.author.id,
+        display_name: story.author.displayName,
+        avatar_url: story.author.avatarUrl,
+      }
+    : null,
+});
+
+const recommendationStoryInclude = (requester) => ({
+  stats: {
+    select: { readCount: true, likeCount: true },
+  },
+  storyGenres: {
+    include: {
+      genre: { select: { id: true, name: true, slug: true } },
+    },
+  },
+  author: {
+    select: { id: true, displayName: true, avatarUrl: true },
+  },
+  _count: {
+    select: { chapters: true },
+  },
+  likes: requester?.id
+    ? {
+        where: { userId: requester.id },
+        select: { id: true },
+        take: 1,
+      }
+    : false,
+});
 const SEARCH_SORTS = new Set(["updated", "newest", "title"]);
 
 const parseNonNegativeInt = (value, fieldName) => {
   if (value === undefined || value === null || value === "") return 0;
   const num = Number(value);
   if (!Number.isInteger(num) || num < 0) {
-    throw new Error(`${fieldName} phải là số nguyên không âm`);
+    throw new Error(`${fieldName} pháº£i lÃ  sá»‘ nguyÃªn khÃ´ng Ã¢m`);
   }
   return num;
 };
@@ -91,15 +131,24 @@ const parseSearchLimit = (value) => {
   if (value === undefined || value === null || value === "") return 20;
   const num = Number(value);
   if (!Number.isInteger(num) || num <= 0) {
-    throw new Error("limit phải là số nguyên dương");
+    throw new Error("limit pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng");
   }
   return Math.min(num, 50);
+};
+
+const parseRecommendationLimit = (value) => {
+  if (value === undefined || value === null || value === "") return 10;
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) {
+    throw new Error("limit pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng");
+  }
+  return Math.min(num, 20);
 };
 
 const buildSearchOrderBy = (sort) => {
   const normalizedSort = normalizeText(sort) || "updated";
   if (!SEARCH_SORTS.has(normalizedSort)) {
-    throw new Error("sort không hợp lệ");
+    throw new Error("sort khÃ´ng há»£p lá»‡");
   }
 
   switch (normalizedSort) {
@@ -128,7 +177,7 @@ const parseGenreIdsInput = (genreIds) => {
     if (!Array.isArray(parsed)) throw new Error();
     return [...new Set(parsed.map((item) => normalizeText(item)).filter(Boolean))];
   } catch (_) {
-    throw new Error("genre_ids phải là mảng id hợp lệ");
+    throw new Error("genre_ids pháº£i lÃ  máº£ng id há»£p lá»‡");
   }
 };
 
@@ -141,7 +190,7 @@ const buildStoryGenreCreateData = async (genreIds) => {
   });
 
   if (genres.length !== genreIds.length) {
-    throw new Error("Có thể loại không tồn tại hoặc đã bị ẩn");
+    throw new Error("CÃ³ thá»ƒ loáº¡i khÃ´ng tá»“n táº¡i hoáº·c Ä‘Ã£ bá»‹ áº©n");
   }
 
   return genreIds.map((genreId) => ({ genreId }));
@@ -151,7 +200,7 @@ const ensureStoryOwnerOrAdmin = ({ story, requester }) => {
   const isOwner = story.authorId === requester.id;
   const isAdmin = requester.role === "admin";
   if (!isOwner && !isAdmin) {
-    throw new Error("Bạn không có quyền thao tác truyện này");
+    throw new Error("Báº¡n khÃ´ng cÃ³ quyá»n thao tÃ¡c truyá»‡n nÃ y");
   }
 };
 
@@ -168,17 +217,17 @@ const createStory = async ({
   genreIds,
 }) => {
   const normalizedTitle = normalizeText(title);
-  if (!normalizedTitle) throw new Error("Tiêu đề truyện không được để trống");
-  if (normalizedTitle.length > 200) throw new Error("Tiêu đề truyện tối đa 200 ký tự");
+  if (!normalizedTitle) throw new Error("TiÃªu Ä‘á» truyá»‡n khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+  if (normalizedTitle.length > 200) throw new Error("TiÃªu Ä‘á» truyá»‡n tá»‘i Ä‘a 200 kÃ½ tá»±");
 
   const normalizedDescription = normalizeText(description);
   if (normalizedDescription.length > 5000) {
-    throw new Error("Mô tả truyện tối đa 5000 ký tự");
+    throw new Error("MÃ´ táº£ truyá»‡n tá»‘i Ä‘a 5000 kÃ½ tá»±");
   }
 
   const normalizedStatus = normalizeText(status) || "draft";
   if (!ALLOWED_STORY_STATUSES.has(normalizedStatus)) {
-    throw new Error("Trạng thái truyện không hợp lệ");
+    throw new Error("Tráº¡ng thÃ¡i truyá»‡n khÃ´ng há»£p lá»‡");
   }
 
   const finalSlug = await ensureUniqueSlug({ title: normalizedTitle, customSlug: slug });
@@ -230,7 +279,7 @@ const getMyStories = async ({ userId, status }) => {
   if (status !== undefined && status !== null && status !== "") {
     const normalizedStatus = normalizeText(status);
     if (!ALLOWED_STORY_STATUSES.has(normalizedStatus)) {
-      throw new Error("Trạng thái truyện không hợp lệ");
+      throw new Error("Tráº¡ng thÃ¡i truyá»‡n khÃ´ng há»£p lá»‡");
     }
     where.status = normalizedStatus;
   }
@@ -260,7 +309,7 @@ const getAdminStories = async ({ status, query }) => {
   if (status !== undefined && status !== null && status !== "") {
     const normalizedStatus = normalizeText(status);
     if (!ALLOWED_STORY_STATUSES.has(normalizedStatus)) {
-      throw new Error("Tráº¡ng thÃ¡i truyá»‡n khÃ´ng há»£p lá»‡");
+      throw new Error("TrÃ¡ÂºÂ¡ng thÃƒÂ¡i truyÃ¡Â»â€¡n khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡");
     }
     where.status = normalizedStatus;
   }
@@ -316,18 +365,44 @@ const getAdminStories = async ({ status, query }) => {
 
 const ensureStoryExists = async (storyId) => {
   const normalizedStoryId = normalizeText(storyId);
-  if (!normalizedStoryId) throw new Error("Thiếu id truyện");
+  if (!normalizedStoryId) throw new Error("Thiáº¿u id truyá»‡n");
 
   const story = await prisma.story.findUnique({
     where: { id: normalizedStoryId },
     select: { id: true },
   });
 
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
   return story;
 };
 
 const ensureStoryCanBeLiked = async ({ storyId, requester }) => {
+  const normalizedStoryId = normalizeText(storyId);
+  if (!normalizedStoryId) throw new Error("ThiÃ¡ÂºÂ¿u id truyÃ¡Â»â€¡n");
+
+  const story = await prisma.story.findUnique({
+    where: { id: normalizedStoryId },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      authorId: true,
+      status: true,
+    },
+  });
+
+  if (!story) throw new Error("KhÃƒÂ´ng tÃƒÂ¬m thÃ¡ÂºÂ¥y truyÃ¡Â»â€¡n");
+
+  const isOwner = requester?.id && story.authorId === requester.id;
+  const isAdmin = requester?.role === "admin";
+  if (story.status !== "published" && !isOwner && !isAdmin) {
+    throw new Error("TruyÃ¡Â»â€¡n chÃ†Â°a Ã„â€˜Ã†Â°Ã¡Â»Â£c xuÃ¡ÂºÂ¥t bÃ¡ÂºÂ£n");
+  }
+
+  return story;
+};
+
+const ensureStoryCanBeCommented = async ({ storyId, requester }) => {
   const normalizedStoryId = normalizeText(storyId);
   if (!normalizedStoryId) throw new Error("Thiáº¿u id truyá»‡n");
 
@@ -353,33 +428,7 @@ const ensureStoryCanBeLiked = async ({ storyId, requester }) => {
   return story;
 };
 
-const ensureStoryCanBeCommented = async ({ storyId, requester }) => {
-  const normalizedStoryId = normalizeText(storyId);
-  if (!normalizedStoryId) throw new Error("Thiếu id truyện");
-
-  const story = await prisma.story.findUnique({
-    where: { id: normalizedStoryId },
-    select: {
-      id: true,
-      title: true,
-      slug: true,
-      authorId: true,
-      status: true,
-    },
-  });
-
-  if (!story) throw new Error("Không tìm thấy truyện");
-
-  const isOwner = requester?.id && story.authorId === requester.id;
-  const isAdmin = requester?.role === "admin";
-  if (story.status !== "published" && !isOwner && !isAdmin) {
-    throw new Error("Truyện chưa được xuất bản");
-  }
-
-  return story;
-};
-
-const formatStoryComment = (comment, requester) => ({
+const formatStoryComment = (comment, requester, featuredCommentIds = []) => ({
   id: comment.id,
   user_id: comment.userId,
   story_id: comment.storyId,
@@ -391,6 +440,7 @@ const formatStoryComment = (comment, requester) => ({
   updated_at: comment.updatedAt,
   is_mine: Boolean(requester?.id && comment.userId === requester.id),
   is_liked: Array.isArray(comment.likes) ? comment.likes.length > 0 : false,
+  is_highlighted: featuredCommentIds.includes(comment.id),
   user: {
     id: comment.user.id,
     display_name: comment.user.displayName,
@@ -401,9 +451,9 @@ const formatStoryComment = (comment, requester) => ({
 
 const validateCommentContent = (content) => {
   const normalizedContent = normalizeText(content);
-  if (!normalizedContent) throw new Error("Nội dung bình luận không được để trống");
+  if (!normalizedContent) throw new Error("Ná»™i dung bÃ¬nh luáº­n khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
   if (normalizedContent.length > 2000) {
-    throw new Error("Nội dung bình luận tối đa 2000 ký tự");
+    throw new Error("Ná»™i dung bÃ¬nh luáº­n tá»‘i Ä‘a 2000 kÃ½ tá»±");
   }
   return normalizedContent;
 };
@@ -509,7 +559,7 @@ const trackReadEvent = async ({
   );
 
   if (!requester?.id && !normalizedDeviceId) {
-    throw new Error("Thiếu định danh người đọc");
+    throw new Error("Thiáº¿u Ä‘á»‹nh danh ngÆ°á»i Ä‘á»c");
   }
 
   const qualified = shouldQualifyRead({
@@ -647,7 +697,7 @@ const likeStory = async ({ storyId, requester }) => {
       actorId: requester.id,
       storyId: story.id,
       type: "story_liked",
-      title: `${getRequesterDisplayName(requester)} đã thích truyện của bạn`,
+      title: `${getRequesterDisplayName(requester)} Ä‘Ã£ thÃ­ch truyá»‡n cá»§a báº¡n`,
       body: story.title,
       linkUrl: `/stories/${story.slug}`,
       meta: {
@@ -724,7 +774,7 @@ const unlikeStory = async ({ storyId, requester }) => {
 
 const getStoryDetailBySlug = async ({ slug, requester }) => {
   const normalizedSlug = normalizeText(slug);
-  if (!normalizedSlug) throw new Error("Thiếu slug truyện");
+  if (!normalizedSlug) throw new Error("Thiáº¿u slug truyá»‡n");
 
   const story = await prisma.story.findUnique({
     where: { slug: normalizedSlug },
@@ -733,7 +783,13 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
         select: { readCount: true, likeCount: true },
       },
       author: {
-        select: { id: true, displayName: true, avatarUrl: true, role: true },
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+          role: true,
+          bio: true,
+        },
       },
       likes: requester?.id
         ? {
@@ -751,12 +807,12 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
     },
   });
 
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
 
   const isOwner = requester?.id && story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   if (story.status !== "published" && !isOwner && !isAdmin) {
-    throw new Error("Truyện chưa được xuất bản");
+    throw new Error("Truyá»‡n chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
   }
 
   return {
@@ -770,6 +826,12 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
       display_name: story.author.displayName,
       avatar_url: story.author.avatarUrl,
       role: story.author.role,
+      bio: story.author.bio || "",
+      story_count: await prisma.story.count({
+        where: {
+          authorId: story.authorId,
+        },
+      }),
     },
   };
 };
@@ -817,6 +879,7 @@ const listStoryComments = async ({ storyId, requester, sort, limit }) => {
     where: { storyId: story.id },
     select: { commentCount: true },
   });
+  const featuredCommentIds = await getStoryFeaturedCommentIds({ storyId: story.id });
 
   return {
     story: {
@@ -825,13 +888,16 @@ const listStoryComments = async ({ storyId, requester, sort, limit }) => {
       slug: story.slug,
     },
     total: commentCount?.commentCount ?? comments.length,
-    items: comments.map((comment) => formatStoryComment(comment, requester)),
+    featured_comment_ids: featuredCommentIds,
+    items: comments.map((comment) =>
+      formatStoryComment(comment, requester, featuredCommentIds),
+    ),
   };
 };
 
 const ensureStoryCommentCanBeLiked = async ({ commentId, requester }) => {
   const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thiếu id bình luận");
+  if (!normalizedCommentId) throw new Error("Thiáº¿u id bÃ¬nh luáº­n");
 
   const comment = await prisma.storyComment.findUnique({
     where: { id: normalizedCommentId },
@@ -848,19 +914,67 @@ const ensureStoryCommentCanBeLiked = async ({ commentId, requester }) => {
     },
   });
 
-  if (!comment) throw new Error("Không tìm thấy bình luận");
+  if (!comment) throw new Error("KhÃ´ng tÃ¬m tháº¥y bÃ¬nh luáº­n");
 
   const isOwner = requester?.id && comment.story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   if (comment.story.status !== "published" && !isOwner && !isAdmin) {
-    throw new Error("Truyện chưa được xuất bản");
+    throw new Error("Truyá»‡n chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
+  }
+
+  return comment;
+};
+
+const ensureStoryCommentCanBeManaged = async ({ commentId, requester }) => {
+  if (!requester?.id) throw new Error("Chua dang nhap");
+
+  const normalizedCommentId = normalizeText(commentId);
+  if (!normalizedCommentId) throw new Error("Thieu id binh luan");
+
+  const comment = await prisma.storyComment.findUnique({
+    where: { id: normalizedCommentId },
+    include: {
+      story: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          authorId: true,
+        },
+      },
+      user: {
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+      stats: {
+        select: { likeCount: true },
+      },
+      likes: {
+        where: { userId: requester.id },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+
+  if (!comment) throw new Error("Khong tim thay binh luan");
+
+  const isCommentOwner = comment.userId === requester.id;
+  const isStoryOwner = comment.story.authorId === requester.id;
+  const isAdmin = requester.role === "admin";
+  if (!isCommentOwner && !isStoryOwner && !isAdmin) {
+    throw new Error("Ban khong co quyen thao tac binh luan nay");
   }
 
   return comment;
 };
 
 const createStoryComment = async ({ storyId, requester, content }) => {
-  if (!requester?.id) throw new Error("Chưa đăng nhập");
+  if (!requester?.id) throw new Error("ChÆ°a Ä‘Äƒng nháº­p");
 
   const story = await ensureStoryCanBeCommented({ storyId, requester });
   const normalizedContent = validateCommentContent(content);
@@ -896,6 +1010,7 @@ const createStoryComment = async ({ storyId, requester, content }) => {
         commentCount: { increment: 1 },
       },
     });
+    await recomputeStoryFeaturedRanking({ tx, storyId: story.id });
 
     return comment;
   });
@@ -909,7 +1024,7 @@ const createStoryComment = async ({ storyId, requester, content }) => {
       actorId: requester.id,
       storyId: story.id,
       type: "story_commented",
-      title: `${getRequesterDisplayName(requester)} đã bình luận về truyện của bạn`,
+      title: `${getRequesterDisplayName(requester)} Ä‘Ã£ bÃ¬nh luáº­n vá» truyá»‡n cá»§a báº¡n`,
       body: normalizedContent,
       linkUrl: `/stories/${story.slug}`,
       meta: {
@@ -925,7 +1040,7 @@ const createStoryComment = async ({ storyId, requester, content }) => {
 const likeStoryComment = async ({ commentId, requester }) => {
   const comment = await ensureStoryCommentCanBeLiked({ commentId, requester });
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const existed = await tx.storyCommentLike.findUnique({
       where: {
         userId_commentId: {
@@ -946,10 +1061,12 @@ const likeStoryComment = async ({ commentId, requester }) => {
         update: {},
         select: { likeCount: true },
       });
+      await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
 
       return {
         liked: true,
         like_count: stats.likeCount,
+        should_notify: false,
       };
     }
 
@@ -971,12 +1088,36 @@ const likeStoryComment = async ({ commentId, requester }) => {
       },
       select: { likeCount: true },
     });
+    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
 
     return {
       liked: true,
       like_count: stats.likeCount,
+      should_notify: requester.id !== comment.userId,
     };
   });
+
+  if (result.should_notify) {
+    await notificationService.createNotification({
+      recipientId: comment.userId,
+      actorId: requester.id,
+      storyId: comment.storyId,
+      type: "system",
+      title: `${getRequesterDisplayName(requester)} da thich binh luan cua ban`,
+      body: comment.content,
+      linkUrl: `/stories/${comment.story.slug}`,
+      meta: {
+        story_title: comment.story.title,
+        comment_id: comment.id,
+        comment_preview: String(comment.content || "").slice(0, 120),
+      },
+    });
+  }
+
+  return {
+    liked: result.liked,
+    like_count: result.like_count,
+  };
 };
 
 const unlikeStoryComment = async ({ commentId, requester }) => {
@@ -1031,6 +1172,7 @@ const unlikeStoryComment = async ({ commentId, requester }) => {
       data: { likeCount: Math.max(0, currentStats.likeCount - 1) },
       select: { likeCount: true },
     });
+    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
 
     return {
       liked: false,
@@ -1039,6 +1181,309 @@ const unlikeStoryComment = async ({ commentId, requester }) => {
   });
 };
 
+const updateStoryComment = async ({ commentId, requester, content }) => {
+  const comment = await ensureStoryCommentCanBeManaged({ commentId, requester });
+  const normalizedContent = validateCommentContent(content);
+
+  const updatedComment = await prisma.$transaction(async (tx) => {
+    const updated = await tx.storyComment.update({
+      where: { id: comment.id },
+      data: {
+        content: normalizedContent,
+        isEdited: true,
+      },
+      include: {
+        stats: {
+          select: { likeCount: true },
+        },
+        likes: {
+          where: { userId: requester.id },
+          select: { id: true },
+          take: 1,
+        },
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
+    return updated;
+  });
+
+  const featuredCommentIds = await getStoryFeaturedCommentIds({
+    storyId: comment.storyId,
+  });
+  return formatStoryComment(updatedComment, requester, featuredCommentIds);
+};
+
+const deleteStoryComment = async ({ commentId, requester }) => {
+  const comment = await ensureStoryCommentCanBeManaged({ commentId, requester });
+
+  return prisma.$transaction(async (tx) => {
+    await tx.storyComment.delete({
+      where: { id: comment.id },
+    });
+
+    const currentStats = await tx.storyStat.findUnique({
+      where: { storyId: comment.storyId },
+      select: { commentCount: true },
+    });
+
+    let nextCommentCount = 0;
+    if (currentStats) {
+      nextCommentCount = Math.max(0, currentStats.commentCount - 1);
+      await tx.storyStat.update({
+        where: { storyId: comment.storyId },
+        data: { commentCount: nextCommentCount },
+      });
+    }
+
+    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
+
+    return {
+      deleted: true,
+      comment_id: comment.id,
+      story_id: comment.storyId,
+      comment_count: nextCommentCount,
+    };
+  });
+};
+
+const getStoryFeaturedComments = async ({ storyId, requester }) => {
+  const story = await ensureStoryCanBeCommented({ storyId, requester });
+  const featuredCommentIds = await getStoryFeaturedCommentIds({ storyId: story.id });
+
+  if (!featuredCommentIds.length) {
+    return {
+      story: {
+        id: story.id,
+        title: story.title,
+        slug: story.slug,
+      },
+      featured_comment_ids: [],
+      items: [],
+    };
+  }
+
+  const comments = await prisma.storyComment.findMany({
+    where: {
+      storyId: story.id,
+      id: { in: featuredCommentIds },
+    },
+    include: {
+      stats: {
+        select: { likeCount: true },
+      },
+      likes: requester?.id
+        ? {
+            where: { userId: requester.id },
+            select: { id: true },
+            take: 1,
+          }
+        : false,
+      user: {
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+    },
+  });
+
+  const commentsById = new Map(comments.map((item) => [item.id, item]));
+  const items = featuredCommentIds
+    .map((id) => commentsById.get(id))
+    .filter(Boolean)
+    .map((comment) => formatStoryComment(comment, requester, featuredCommentIds));
+
+  return {
+    story: {
+      id: story.id,
+      title: story.title,
+      slug: story.slug,
+    },
+    featured_comment_ids: featuredCommentIds,
+    items,
+  };
+};
+
+const recomputeStoryFeaturedByStoryId = async ({ storyId, requester }) => {
+  const normalizedStoryId = normalizeText(storyId);
+  if (!normalizedStoryId) throw new Error("Thiáº¿u id truyá»‡n");
+
+  const story = await prisma.story.findUnique({
+    where: { id: normalizedStoryId },
+    select: { id: true, title: true, slug: true, authorId: true },
+  });
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
+  ensureStoryOwnerOrAdmin({ story, requester });
+
+  const featuredCommentIds = await prisma.$transaction((tx) =>
+    recomputeStoryFeaturedRanking({ tx, storyId: story.id }),
+  );
+
+  return {
+    story: {
+      id: story.id,
+      title: story.title,
+      slug: story.slug,
+    },
+    featured_comment_ids: featuredCommentIds,
+  };
+};
+
+const getSimilarStories = async ({ storyId, requester, limit }) => {
+  const baseStory = await ensureStoryCanBeCommented({ storyId, requester });
+  const take = parseRecommendationLimit(limit);
+
+  const fullBaseStory = await prisma.story.findUnique({
+    where: { id: baseStory.id },
+    include: {
+      storyGenres: { select: { genreId: true } },
+    },
+  });
+
+  if (!fullBaseStory) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
+
+  const genreIds = Array.isArray(fullBaseStory.storyGenres)
+    ? fullBaseStory.storyGenres.map((item) => item.genreId)
+    : [];
+
+  const candidates = await prisma.story.findMany({
+    where: {
+      status: "published",
+      id: { not: fullBaseStory.id },
+      OR: [
+        { authorId: fullBaseStory.authorId },
+        genreIds.length
+          ? {
+              storyGenres: {
+                some: {
+                  genreId: { in: genreIds },
+                },
+              },
+            }
+          : undefined,
+      ].filter(Boolean),
+    },
+    include: recommendationStoryInclude(requester),
+    take: 120,
+  });
+
+  let ranked = candidates
+    .map((story) => {
+      const sharedGenres = story.storyGenres.filter((item) =>
+        genreIds.includes(item.genre.id),
+      ).length;
+      const sameAuthor = story.authorId === fullBaseStory.authorId ? 1 : 0;
+      const ageMs = Date.now() - new Date(story.updatedAt).getTime();
+      const ageDays = Math.max(0, ageMs / (24 * 60 * 60 * 1000));
+      const freshness = Math.max(0, 1 - ageDays / 30);
+      const score = sharedGenres * 3 + sameAuthor + freshness;
+      return { story, score };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return new Date(b.story.updatedAt).getTime() - new Date(a.story.updatedAt).getTime();
+    })
+    .slice(0, take)
+    .map((item) => item.story);
+
+  if (ranked.length < take) {
+    const missing = take - ranked.length;
+    const existedIds = new Set([fullBaseStory.id, ...ranked.map((item) => item.id)]);
+    const fallback = await prisma.story.findMany({
+      where: {
+        status: "published",
+        id: { notIn: Array.from(existedIds) },
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: recommendationStoryInclude(requester),
+      take: missing,
+    });
+    ranked = [...ranked, ...fallback];
+  }
+
+  return ranked.map((item) => formatStoryCard(item, requester));
+};
+
+const getRecommendedStories = async ({ storyId, requester, limit }) => {
+  const baseStory = await ensureStoryCanBeCommented({ storyId, requester });
+  const take = parseRecommendationLimit(limit);
+
+  const likedUsers = await prisma.storyLike.findMany({
+    where: { storyId: baseStory.id },
+    select: { userId: true },
+    take: 500,
+  });
+
+  const userIds = likedUsers.map((item) => item.userId);
+  if (!userIds.length) {
+    return getSimilarStories({ storyId: baseStory.id, requester, limit: take });
+  }
+
+  const coLikeRows = await prisma.storyLike.findMany({
+    where: {
+      userId: { in: userIds },
+      storyId: { not: baseStory.id },
+      story: { status: "published" },
+    },
+    select: { storyId: true },
+    take: 5000,
+  });
+
+  if (!coLikeRows.length) {
+    return getSimilarStories({ storyId: baseStory.id, requester, limit: take });
+  }
+
+  const scoreByStoryId = new Map();
+  for (const row of coLikeRows) {
+    scoreByStoryId.set(row.storyId, (scoreByStoryId.get(row.storyId) || 0) + 1);
+  }
+
+  const rankedStoryIds = Array.from(scoreByStoryId.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map((item) => item[0]);
+
+  const stories = await prisma.story.findMany({
+    where: {
+      id: { in: rankedStoryIds },
+      status: "published",
+    },
+    include: recommendationStoryInclude(requester),
+  });
+
+  const storyMap = new Map(stories.map((item) => [item.id, item]));
+  let ranked = rankedStoryIds
+    .map((id) => storyMap.get(id))
+    .filter(Boolean)
+    .slice(0, take);
+
+  if (ranked.length < take) {
+    const missing = take - ranked.length;
+    const existedIds = new Set([baseStory.id, ...ranked.map((item) => item.id)]);
+    const fallback = await prisma.story.findMany({
+      where: {
+        status: "published",
+        id: { notIn: Array.from(existedIds) },
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: recommendationStoryInclude(requester),
+      take: missing,
+    });
+    ranked = [...ranked, ...fallback];
+  }
+
+  return ranked.map((item) => formatStoryCard(item, requester));
+};
 const updateStory = async ({
   storyId,
   requester,
@@ -1065,7 +1510,7 @@ const updateStory = async ({
       },
     },
   });
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
 
   ensureStoryOwnerOrAdmin({ story, requester });
 
@@ -1074,15 +1519,15 @@ const updateStory = async ({
 
   if (title !== undefined) {
     const normalizedTitle = normalizeText(title);
-    if (!normalizedTitle) throw new Error("Tiêu đề truyện không được để trống");
-    if (normalizedTitle.length > 200) throw new Error("Tiêu đề truyện tối đa 200 ký tự");
+    if (!normalizedTitle) throw new Error("TiÃªu Ä‘á» truyá»‡n khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+    if (normalizedTitle.length > 200) throw new Error("TiÃªu Ä‘á» truyá»‡n tá»‘i Ä‘a 200 kÃ½ tá»±");
     data.title = normalizedTitle;
   }
 
   if (description !== undefined) {
     const normalizedDescription = normalizeText(description);
     if (normalizedDescription.length > 5000) {
-      throw new Error("Mô tả truyện tối đa 5000 ký tự");
+      throw new Error("MÃ´ táº£ truyá»‡n tá»‘i Ä‘a 5000 kÃ½ tá»±");
     }
     data.description = normalizedDescription || null;
   }
@@ -1102,7 +1547,7 @@ const updateStory = async ({
   if (status !== undefined) {
     const normalizedStatus = normalizeText(status);
     if (!ALLOWED_STORY_STATUSES.has(normalizedStatus)) {
-      throw new Error("Trạng thái truyện không hợp lệ");
+      throw new Error("Tráº¡ng thÃ¡i truyá»‡n khÃ´ng há»£p lá»‡");
     }
     data.status = normalizedStatus;
   }
@@ -1117,7 +1562,7 @@ const updateStory = async ({
 
   if (!Object.keys(data).length) {
     if (parsedGenreIds === null) {
-      throw new Error("Không có dữ liệu hợp lệ để cập nhật");
+      throw new Error("KhÃ´ng cÃ³ dá»¯ liá»‡u há»£p lá»‡ Ä‘á»ƒ cáº­p nháº­t");
     }
   }
 
@@ -1164,7 +1609,7 @@ const updateStory = async ({
 
 const deleteStory = async ({ storyId, requester }) => {
   const story = await prisma.story.findUnique({ where: { id: storyId } });
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
 
   ensureStoryOwnerOrAdmin({ story, requester });
 
@@ -1176,7 +1621,7 @@ const deleteStory = async ({ storyId, requester }) => {
       console.error("Cleanup story cover on delete failed:", err.message);
     }
   }
-  return { message: "Xóa truyện thành công" };
+  return { message: "XÃ³a truyá»‡n thÃ nh cÃ´ng" };
 };
 
 module.exports = {
@@ -1191,7 +1636,16 @@ module.exports = {
   createStoryComment,
   likeStoryComment,
   unlikeStoryComment,
+  updateStoryComment,
+  deleteStoryComment,
+  getStoryFeaturedComments,
+  recomputeStoryFeaturedByStoryId,
+  getSimilarStories,
+  getRecommendedStories,
   getStoryDetailBySlug,
   updateStory,
   deleteStory,
 };
+
+
+

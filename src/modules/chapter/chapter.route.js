@@ -13,6 +13,17 @@ const authenticateOptional = (req, _res, next) => {
 
 router.get("/stories/:storyId/chapters", authenticateOptional, chapterController.getByStory);
 router.get("/:id/comments", authenticateOptional, chapterController.getComments);
+router.get(
+  "/:id/comments/featured",
+  authenticateOptional,
+  chapterController.getFeaturedComment,
+);
+router.post(
+  "/:id/comments/featured/recompute",
+  authenticate,
+  authorize("author", "admin"),
+  chapterController.recomputeFeaturedComment,
+);
 router.post("/:id/comments", authenticate, chapterController.createComment);
 router.post(
   "/comments/:commentId/like",
@@ -23,6 +34,16 @@ router.delete(
   "/comments/:commentId/like",
   authenticate,
   chapterController.unlikeComment,
+);
+router.patch(
+  "/comments/:commentId",
+  authenticate,
+  chapterController.updateComment,
+);
+router.delete(
+  "/comments/:commentId",
+  authenticate,
+  chapterController.deleteComment,
 );
 router.get("/:id", authenticateOptional, chapterController.getById);
 router.post("/:id/like", authenticate, chapterController.likeChapter);

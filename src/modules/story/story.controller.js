@@ -170,6 +170,90 @@ const unlikeComment = async (req, res) => {
   }
 };
 
+const updateComment = async (req, res) => {
+  try {
+    const comment = await storyService.updateStoryComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+      content: req.body.content,
+    });
+
+    res.json({
+      message: "Cap nhat binh luan thanh cong",
+      comment,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const deleteComment = async (req, res) => {
+  try {
+    const result = await storyService.deleteStoryComment({
+      commentId: req.params.commentId,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getFeaturedComments = async (req, res) => {
+  try {
+    const result = await storyService.getStoryFeaturedComments({
+      storyId: req.params.id,
+      requester: req.user || null,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const recomputeFeaturedComments = async (req, res) => {
+  try {
+    const result = await storyService.recomputeStoryFeaturedByStoryId({
+      storyId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getSimilarStories = async (req, res) => {
+  try {
+    const stories = await storyService.getSimilarStories({
+      storyId: req.params.id,
+      requester: req.user || null,
+      limit: req.query.limit,
+    });
+
+    res.json(stories);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getRecommendedStories = async (req, res) => {
+  try {
+    const stories = await storyService.getRecommendedStories({
+      storyId: req.params.id,
+      requester: req.user || null,
+      limit: req.query.limit,
+    });
+
+    res.json(stories);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getBySlug = async (req, res) => {
   try {
     const story = await storyService.getStoryDetailBySlug({
@@ -236,6 +320,12 @@ module.exports = {
   createComment,
   likeComment,
   unlikeComment,
+  updateComment,
+  deleteComment,
+  getFeaturedComments,
+  recomputeFeaturedComments,
+  getSimilarStories,
+  getRecommendedStories,
   getBySlug,
   updateStory,
   deleteStory,

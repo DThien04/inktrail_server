@@ -41,6 +41,8 @@ const storySummaryInclude = {
   stats: {
     select: {
       readCount: true,
+      likeCount: true,
+      commentCount: true,
     },
   },
 };
@@ -52,6 +54,9 @@ const formatStorySummary = (story) => ({
   description: story.description,
   cover_url: story.coverUrl,
   read_count: typeof story.stats?.readCount === "number" ? story.stats.readCount : 0,
+  like_count: typeof story.stats?.likeCount === "number" ? story.stats.likeCount : 0,
+  comment_count:
+    typeof story.stats?.commentCount === "number" ? story.stats.commentCount : 0,
   status: story.status,
   created_at: story.createdAt,
   updated_at: story.updatedAt,
@@ -87,16 +92,36 @@ const getNewStories = async ({ limit }) => {
 const getHotStories = async ({ limit }) => {
   const stories = await prisma.story.findMany({
     where: { status: "published" },
-    orderBy: [
-      { chapters: { _count: "desc" } },
-      { updatedAt: "desc" },
-      { createdAt: "desc" },
-    ],
-    take: parseLimit(limit),
+    take: MAX_LIMIT,
     include: storySummaryInclude,
   });
 
-  return stories.map(formatStorySummary);
+  const ranked = stories
+    .map((story) => {
+      const readCount =
+        typeof story.stats?.readCount === "number" ? story.stats.readCount : 0;
+      const likeCount =
+        typeof story.stats?.likeCount === "number" ? story.stats.likeCount : 0;
+      const commentCount =
+        typeof story.stats?.commentCount === "number" ? story.stats.commentCount : 0;
+
+      // Hot ưu tiên tương tác thật, dùng updatedAt để phá hòa.
+      const hotScore = readCount * 5 + likeCount * 3 + commentCount * 2;
+      return { story, hotScore };
+    })
+    .sort((a, b) => {
+      if (b.hotScore !== a.hotScore) return b.hotScore - a.hotScore;
+      const aUpdated = a.story.updatedAt instanceof Date ? a.story.updatedAt.getTime() : 0;
+      const bUpdated = b.story.updatedAt instanceof Date ? b.story.updatedAt.getTime() : 0;
+      if (bUpdated !== aUpdated) return bUpdated - aUpdated;
+      const aCreated = a.story.createdAt instanceof Date ? a.story.createdAt.getTime() : 0;
+      const bCreated = b.story.createdAt instanceof Date ? b.story.createdAt.getTime() : 0;
+      return bCreated - aCreated;
+    })
+    .slice(0, parseLimit(limit))
+    .map((item) => item.story);
+
+  return ranked.map(formatStorySummary);
 };
 
 module.exports = {
