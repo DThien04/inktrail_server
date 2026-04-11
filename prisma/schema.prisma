@@ -28,6 +28,7 @@ model User {
   chapterCommentLikes   ChapterCommentLike[]
   readingProgresses     ReadingProgress[]
   readSessions          StoryReadSession[]
+  storyRatings          StoryRating[]
   notificationsReceived Notification[]       @relation("UserNotifications")
   notificationsSent     Notification[]       @relation("NotificationActor")
 
@@ -60,6 +61,7 @@ model Story {
   author            User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   chapters          Chapter[]
   likes             StoryLike[]
+  ratings           StoryRating[]
   comments          StoryComment[]
   homeBanner        HomeBanner?
   storyGenres       StoryGenre[]
@@ -174,6 +176,25 @@ model StoryLike {
   @@index([storyId])
   @@index([userId])
   @@map("story_likes")
+}
+
+model StoryRating {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  storyId   String   @map("story_id")
+  score     Int
+  content   String
+  editCount Int      @default(0) @map("edit_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+  @@index([storyId, createdAt])
+  @@index([userId, createdAt])
+  @@map("story_ratings")
 }
 
 model ChapterLike {

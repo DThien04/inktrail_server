@@ -24,6 +24,8 @@ const QUALIFIED_READ_SECONDS = 30;
 const QUALIFIED_SCROLL_PERCENT = 50;
 const QUALIFIED_CHAPTER_INDEX = 1;
 const READ_COUNT_WINDOW_HOURS = 24;
+const MIN_STORY_RATING = 1;
+const MAX_STORY_RATING = 5;
 
 const slugify = (value) => {
   const base = normalizeText(value)
@@ -143,6 +145,28 @@ const parseRecommendationLimit = (value) => {
     throw new Error("limit pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng");
   }
   return Math.min(num, 20);
+};
+
+const parseRatingScore = (value) => {
+  const num = Number(value);
+  if (!Number.isInteger(num)) {
+    throw new Error("rating phải là số nguyên");
+  }
+  if (num < MIN_STORY_RATING || num > MAX_STORY_RATING) {
+    throw new Error(`rating phải nằm trong khoảng ${MIN_STORY_RATING}-${MAX_STORY_RATING}`);
+  }
+  return num;
+};
+
+const parseRatingContent = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    throw new Error("Nội dung đánh giá không được để trống");
+  }
+  if (normalized.length > 1000) {
+    throw new Error("Nội dung đánh giá tối đa 1000 ký tự");
+  }
+  return normalized;
 };
 
 const buildSearchOrderBy = (sort) => {
@@ -427,6 +451,72 @@ const ensureStoryCanBeCommented = async ({ storyId, requester }) => {
 
   return story;
 };
+
+const getStoryRatingSummary = async ({ storyId, requester }) => {
+  const [aggregate, myRatingRow] = await Promise.all([
+    prisma.storyRating.aggregate({
+      where: { storyId },
+      _avg: { score: true },
+      _count: { score: true },
+    }),
+    requester?.id
+      ? prisma.storyRating.findUnique({
+          where: {
+            userId_storyId: {
+              userId: requester.id,
+              storyId,
+            },
+          },
+          select: {
+            score: true,
+            content: true,
+            editCount: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const rating = Number((aggregate._avg.score ?? 0).toFixed(2));
+  const ratingCount = aggregate._count.score ?? 0;
+
+  return {
+    rating,
+    rating_count: ratingCount,
+    my_rating: myRatingRow
+      ? {
+          score: myRatingRow.score,
+          content: myRatingRow.content,
+          edit_count: myRatingRow.editCount,
+          can_edit: myRatingRow.editCount < 1,
+          created_at: myRatingRow.createdAt,
+          updated_at: myRatingRow.updatedAt,
+        }
+      : null,
+  };
+};
+
+const formatStoryRating = (row, requester) => ({
+  id: row.id,
+  story_id: row.storyId,
+  user_id: row.userId,
+  score: row.score,
+  content: row.content,
+  edit_count: row.editCount,
+  can_edit: row.editCount < 1,
+  created_at: row.createdAt,
+  updated_at: row.updatedAt,
+  is_mine: Boolean(requester?.id && requester.id === row.userId),
+  user: row.user
+    ? {
+        id: row.user.id,
+        display_name: row.user.displayName,
+        avatar_url: row.user.avatarUrl,
+        role: row.user.role,
+      }
+    : null,
+});
 
 const formatStoryComment = (comment, requester, featuredCommentIds = []) => ({
   id: comment.id,
@@ -772,6 +862,207 @@ const unlikeStory = async ({ storyId, requester }) => {
   });
 };
 
+const getMyStoryRating = async ({ storyId, requester }) => {
+  if (!requester?.id) throw new Error("Chưa đăng nhập");
+  const story = await ensureStoryCanBeLiked({ storyId, requester });
+  const summary = await getStoryRatingSummary({ storyId: story.id, requester });
+  return {
+    story_id: story.id,
+    rating: summary.rating,
+    rating_count: summary.rating_count,
+    my_rating: summary.my_rating,
+  };
+};
+
+const listStoryRatings = async ({ storyId, requester, limit }) => {
+  const story = await ensureStoryCanBeCommented({ storyId, requester });
+  let take = Number(limit);
+  if (!Number.isInteger(take) || take <= 0) take = 20;
+  take = Math.min(take, 100);
+
+  const [summary, rows] = await Promise.all([
+    getStoryRatingSummary({ storyId: story.id, requester }),
+    prisma.storyRating.findMany({
+      where: { storyId: story.id },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take,
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            role: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    story: {
+      id: story.id,
+      title: story.title,
+      slug: story.slug,
+    },
+    rating: summary.rating,
+    rating_count: summary.rating_count,
+    my_rating: summary.my_rating,
+    items: rows.map((row) => formatStoryRating(row, requester)),
+  };
+};
+
+const upsertStoryRating = async ({ storyId, requester, score, content }) => {
+  if (!requester?.id) throw new Error("Chưa đăng nhập");
+  const story = await ensureStoryCanBeLiked({ storyId, requester });
+  const normalizedScore = parseRatingScore(score);
+  const normalizedContent = parseRatingContent(content);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existing = await tx.storyRating.findUnique({
+      where: {
+        userId_storyId: {
+          userId: requester.id,
+          storyId: story.id,
+        },
+      },
+      select: {
+        id: true,
+        score: true,
+        content: true,
+        editCount: true,
+      },
+    });
+
+    if (!existing) {
+      const created = await tx.storyRating.create({
+        data: {
+          userId: requester.id,
+          storyId: story.id,
+          score: normalizedScore,
+          content: normalizedContent,
+        },
+        select: {
+          score: true,
+          content: true,
+          editCount: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return {
+        created: true,
+        edited: false,
+        my_rating: {
+          score: created.score,
+          content: created.content,
+          edit_count: created.editCount,
+          can_edit: true,
+          created_at: created.createdAt,
+          updated_at: created.updatedAt,
+        },
+      };
+    }
+
+    if (existing.score === normalizedScore && existing.content === normalizedContent) {
+      const current = await tx.storyRating.findUnique({
+        where: {
+          userId_storyId: {
+            userId: requester.id,
+            storyId: story.id,
+          },
+        },
+        select: {
+          score: true,
+          content: true,
+          editCount: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return {
+        created: false,
+        edited: false,
+        my_rating: current
+          ? {
+              score: current.score,
+              content: current.content,
+              edit_count: current.editCount,
+              can_edit: current.editCount < 1,
+              created_at: current.createdAt,
+              updated_at: current.updatedAt,
+            }
+          : null,
+      };
+    }
+
+    if (existing.editCount >= 1) {
+      throw new Error("Bạn chỉ có thể sửa đánh giá một lần");
+    }
+
+    const updated = await tx.storyRating.update({
+      where: {
+        userId_storyId: {
+          userId: requester.id,
+          storyId: story.id,
+        },
+      },
+      data: {
+        score: normalizedScore,
+        content: normalizedContent,
+      },
+      select: {
+        score: true,
+        content: true,
+        editCount: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      created: false,
+      edited: true,
+      my_rating: {
+        score: updated.score,
+        content: updated.content,
+        edit_count: updated.editCount,
+        can_edit: updated.editCount < 1,
+        created_at: updated.createdAt,
+        updated_at: updated.updatedAt,
+      },
+    };
+  });
+
+  if (result.created && requester.id !== story.authorId) {
+    await notificationService.createNotification({
+      recipientId: story.authorId,
+      actorId: requester.id,
+      storyId: story.id,
+      type: "system",
+      title: `${getRequesterDisplayName(requester)} đã đánh giá truyện ${story.title}`,
+      body: `${normalizedScore}/5 sao`,
+      linkUrl: `/stories/${story.slug}`,
+      meta: {
+        story_title: story.title,
+        rating_score: normalizedScore,
+      },
+    });
+  }
+
+  const summary = await getStoryRatingSummary({ storyId: story.id, requester });
+  return {
+    story_id: story.id,
+    created: result.created,
+    edited: result.edited,
+    rating: summary.rating,
+    rating_count: summary.rating_count,
+    my_rating: result.my_rating,
+  };
+};
+
 const getStoryDetailBySlug = async ({ slug, requester }) => {
   const normalizedSlug = normalizeText(slug);
   if (!normalizedSlug) throw new Error("Thiáº¿u slug truyá»‡n");
@@ -814,9 +1105,16 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
   if (story.status !== "published" && !isOwner && !isAdmin) {
     throw new Error("Truyá»‡n chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
   }
+  const ratingSummary = await getStoryRatingSummary({
+    storyId: story.id,
+    requester,
+  });
 
   return {
     ...formatStory(story),
+    rating: ratingSummary.rating,
+    rating_count: ratingSummary.rating_count,
+    my_rating: ratingSummary.my_rating,
     chapter_count: story._count.chapters,
     comment_count:
       typeof story.stats?.commentCount === "number" ? story.stats.commentCount : 0,
@@ -1632,6 +1930,9 @@ module.exports = {
   trackReadEvent,
   likeStory,
   unlikeStory,
+  listStoryRatings,
+  getMyStoryRating,
+  upsertStoryRating,
   listStoryComments,
   createStoryComment,
   likeStoryComment,

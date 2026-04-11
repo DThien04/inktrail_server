@@ -112,6 +112,48 @@ const unlikeStory = async (req, res) => {
   }
 };
 
+const getMyRating = async (req, res) => {
+  try {
+    const result = await storyService.getMyStoryRating({
+      storyId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const upsertRating = async (req, res) => {
+  try {
+    const result = await storyService.upsertStoryRating({
+      storyId: req.params.id,
+      requester: req.user,
+      score: req.body.rating,
+      content: req.body.content,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const listRatings = async (req, res) => {
+  try {
+    const result = await storyService.listStoryRatings({
+      storyId: req.params.id,
+      requester: req.user || null,
+      limit: req.query.limit,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getComments = async (req, res) => {
   try {
     const result = await storyService.listStoryComments({
@@ -316,6 +358,9 @@ module.exports = {
   trackReadEvent,
   likeStory,
   unlikeStory,
+  listRatings,
+  getMyRating,
+  upsertRating,
   getComments,
   createComment,
   likeComment,

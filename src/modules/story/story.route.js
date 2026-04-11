@@ -28,6 +28,9 @@ router.get(
 router.post("/:id/read-event", authenticateOptional, storyController.trackReadEvent);
 router.post("/:id/like", authenticate, storyController.likeStory);
 router.delete("/:id/like", authenticate, storyController.unlikeStory);
+router.get("/:id/ratings", authenticateOptional, storyController.listRatings);
+router.get("/:id/rating/me", authenticate, storyController.getMyRating);
+router.put("/:id/rating", authenticate, storyController.upsertRating);
 router.get("/:id/comments", authenticateOptional, storyController.getComments);
 router.get(
   "/:id/comments/featured",
