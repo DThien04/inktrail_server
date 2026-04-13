@@ -1,5 +1,6 @@
 const prisma = require("../../config/prisma");
 const { uploadAvatarAndGetUrl } = require("../upload/upload.service");
+const notificationService = require("../notification/notification.service");
 
 const formatUserProfile = (user, stats = {}) => ({
   id: user.id,
@@ -9,7 +10,7 @@ const formatUserProfile = (user, stats = {}) => ({
   bio: user.bio,
   role: user.role,
   stories_read_count: stats.storiesReadCount ?? 0,
-  currently_reading_count: stats.currentlyReadingCount ?? 0,
+  following_author_count: stats.followingAuthorCount ?? 0,
   favorite_count: stats.favoriteCount ?? 0,
 });
 
@@ -22,6 +23,7 @@ const getProfileStats = async (userId) => {
           select: {
             readingProgresses: true,
             storyLikes: true,
+            followingAuthors: true,
           },
         },
       },
@@ -39,11 +41,22 @@ const getProfileStats = async (userId) => {
     user,
     stats: {
       storiesReadCount: distinctReadStories.length,
-      currentlyReadingCount: user._count?.readingProgresses ?? 0,
+      followingAuthorCount: user._count?.followingAuthors ?? 0,
       favoriteCount: user._count?.storyLikes ?? 0,
     },
   };
 };
+
+const formatFollowedAuthor = (row) => ({
+  id: row.author.id,
+  display_name: row.author.displayName,
+  avatar_url: row.author.avatarUrl,
+  bio: row.author.bio,
+  role: row.author.role,
+  followed_at: row.createdAt,
+  story_count: row.author._count?.stories ?? 0,
+  follower_count: row.author._count?.authorFollowers ?? 0,
+});
 
 const getMyProfile = async (userId) => {
   const profileStats = await getProfileStats(userId);
@@ -51,18 +64,43 @@ const getMyProfile = async (userId) => {
   return formatUserProfile(profileStats.user, profileStats.stats);
 };
 
-const getProfileById = async (profileId) => {
-  const user = await prisma.user.findUnique({
-    where: { id: profileId },
-    select: {
-      id: true,
-      displayName: true,
-      avatarUrl: true,
-      bio: true,
-      role: true,
-      createdAt: true,
-    },
-  });
+const getProfileById = async ({ profileId, requesterId = null }) => {
+  const [user, storyCount, followerCount, followingCount, followedRow] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: profileId },
+      select: {
+        id: true,
+        displayName: true,
+        avatarUrl: true,
+        bio: true,
+        role: true,
+        createdAt: true,
+      },
+    }),
+    prisma.story.count({
+      where: {
+        authorId: profileId,
+        status: "published",
+      },
+    }),
+    prisma.authorFollow.count({
+      where: { authorId: profileId },
+    }),
+    prisma.authorFollow.count({
+      where: { followerId: profileId },
+    }),
+    requesterId
+      ? prisma.authorFollow.findUnique({
+          where: {
+            followerId_authorId: {
+              followerId: requesterId,
+              authorId: profileId,
+            },
+          },
+          select: { id: true },
+        })
+      : null,
+  ]);
 
   if (!user) throw new Error("Khong tim thay ho so nguoi dung");
 
@@ -73,7 +111,137 @@ const getProfileById = async (profileId) => {
     bio: user.bio,
     role: user.role,
     created_at: user.createdAt,
+    story_count: storyCount,
+    follower_count: followerCount,
+    following_count: followingCount,
+    is_following: Boolean(followedRow),
   };
+};
+
+const ensureAuthorCanBeFollowed = async (authorId) => {
+  const normalizedAuthorId = String(authorId ?? "").trim();
+  if (!normalizedAuthorId) throw new Error("Thiếu id tác giả");
+
+  const user = await prisma.user.findUnique({
+    where: { id: normalizedAuthorId },
+    select: {
+      id: true,
+      role: true,
+      displayName: true,
+    },
+  });
+
+  if (!user) throw new Error("Không tìm thấy tác giả");
+  if (user.role !== "author" && user.role !== "admin") {
+    throw new Error("Người dùng này không thể được theo dõi như tác giả");
+  }
+
+  return user;
+};
+
+const followAuthor = async ({ followerId, authorId }) => {
+  const author = await ensureAuthorCanBeFollowed(authorId);
+  if (followerId === author.id) {
+    throw new Error("Bạn không thể tự theo dõi chính mình");
+  }
+
+  const existing = await prisma.authorFollow.findUnique({
+    where: {
+      followerId_authorId: {
+        followerId,
+        authorId: author.id,
+      },
+    },
+  });
+
+  if (!existing) {
+    await prisma.authorFollow.create({
+      data: {
+        followerId,
+        authorId: author.id,
+      },
+    });
+
+    await notificationService.createNotification({
+      recipientId: author.id,
+      actorId: followerId,
+      type: "system",
+      title: "Ban co nguoi theo doi moi",
+      body: "Mot doc gia vua theo doi ho so tac gia cua ban.",
+      linkUrl: `/profile/${author.id}`,
+      meta: {
+        author_id: author.id,
+        author_name: author.displayName,
+      },
+    });
+  }
+
+  const followerCount = await prisma.authorFollow.count({
+    where: { authorId: author.id },
+  });
+
+  return {
+    author_id: author.id,
+    is_following: true,
+    follower_count: followerCount,
+  };
+};
+
+const unfollowAuthor = async ({ followerId, authorId }) => {
+  const author = await ensureAuthorCanBeFollowed(authorId);
+  if (followerId === author.id) {
+    throw new Error("Bạn không thể bỏ theo dõi chính mình");
+  }
+
+  await prisma.authorFollow.deleteMany({
+    where: {
+      followerId,
+      authorId: author.id,
+    },
+  });
+
+  const followerCount = await prisma.authorFollow.count({
+    where: { authorId: author.id },
+  });
+
+  return {
+    author_id: author.id,
+    is_following: false,
+    follower_count: followerCount,
+  };
+};
+
+const listFollowedAuthors = async ({ userId, limit = 50 }) => {
+  const take = Math.min(Math.max(Number(limit) || 50, 1), 100);
+
+  const rows = await prisma.authorFollow.findMany({
+    where: { followerId: userId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take,
+    include: {
+      author: {
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+          bio: true,
+          role: true,
+          _count: {
+            select: {
+              stories: {
+                where: {
+                  status: "published",
+                },
+              },
+              authorFollowers: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return rows.map(formatFollowedAuthor);
 };
 
 const updateMyProfile = async ({
@@ -292,6 +460,9 @@ const listMyReadingProgress = async ({ userId, limit = 20 }) => {
 module.exports = {
   getMyProfile,
   getProfileById,
+  followAuthor,
+  unfollowAuthor,
+  listFollowedAuthors,
   updateMyProfile,
   updateMyAvatar,
   deleteMyAvatar,

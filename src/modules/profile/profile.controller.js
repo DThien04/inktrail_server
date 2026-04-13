@@ -12,8 +12,47 @@ const getMe = async (req, res) => {
 
 const getById = async (req, res) => {
   try {
-    const profile = await profileService.getProfileById(req.params.id);
+    const profile = await profileService.getProfileById({
+      profileId: req.params.id,
+      requesterId: req.user?.id || null,
+    });
     res.json(profile);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const followAuthor = async (req, res) => {
+  try {
+    const result = await profileService.followAuthor({
+      followerId: req.user.id,
+      authorId: req.params.id,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const unfollowAuthor = async (req, res) => {
+  try {
+    const result = await profileService.unfollowAuthor({
+      followerId: req.user.id,
+      authorId: req.params.id,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const listFollowedAuthors = async (req, res) => {
+  try {
+    const authors = await profileService.listFollowedAuthors({
+      userId: req.user.id,
+      limit: req.query.limit,
+    });
+    res.json(authors);
   } catch (err) {
     handleError(err, res);
   }
@@ -116,6 +155,9 @@ const upsertMyReadingProgress = async (req, res) => {
 module.exports = {
   getMe,
   getById,
+  followAuthor,
+  unfollowAuthor,
+  listFollowedAuthors,
   updateMe,
   uploadMyAvatar,
   deleteMyAvatar,

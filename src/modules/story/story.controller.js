@@ -69,6 +69,20 @@ const searchStories = async (req, res) => {
   }
 };
 
+const getPublishedStoriesByAuthor = async (req, res) => {
+  try {
+    const stories = await storyService.getPublishedStoriesByAuthor({
+      authorId: req.params.authorId,
+      requester: req.user || null,
+      limit: req.query.limit,
+    });
+
+    res.json(stories);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const trackReadEvent = async (req, res) => {
   try {
     const result = await storyService.trackReadEvent({
@@ -355,6 +369,7 @@ module.exports = {
   getMyStories,
   getAdminStories,
   searchStories,
+  getPublishedStoriesByAuthor,
   trackReadEvent,
   likeStory,
   unlikeStory,

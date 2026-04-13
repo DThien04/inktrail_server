@@ -387,6 +387,84 @@ const getAdminStories = async ({ status, query }) => {
   }));
 };
 
+const getPublishedStoriesByAuthor = async ({ authorId, requester, limit }) => {
+  const normalizedAuthorId = normalizeText(authorId);
+  if (!normalizedAuthorId) throw new Error("Thieu id tac gia");
+
+  const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const user = await prisma.user.findUnique({
+    where: { id: normalizedAuthorId },
+    select: { id: true, role: true },
+  });
+
+  if (!user) throw new Error("Khong tim thay tac gia");
+  if (user.role !== "author" && user.role !== "admin") {
+    throw new Error("Nguoi dung nay khong co ho so tac gia cong khai");
+  }
+
+  const stories = await prisma.story.findMany({
+    where: {
+      authorId: normalizedAuthorId,
+      status: "published",
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take,
+    include: {
+      stats: {
+        select: { readCount: true, likeCount: true },
+      },
+      storyGenres: {
+        include: {
+          genre: { select: { id: true, name: true, slug: true } },
+        },
+      },
+      author: {
+        select: { id: true, displayName: true, avatarUrl: true },
+      },
+      _count: {
+        select: { chapters: true },
+      },
+      likes: requester?.id
+        ? {
+            where: { userId: requester.id },
+            select: { id: true },
+            take: 1,
+          }
+        : false,
+    },
+  });
+
+  const ratingRows = stories.length
+    ? await prisma.storyRating.groupBy({
+        by: ["storyId"],
+        where: {
+          storyId: { in: stories.map((story) => story.id) },
+        },
+        _avg: { score: true },
+        _count: { storyId: true },
+      })
+    : [];
+
+  const ratingMap = new Map(
+    ratingRows.map((row) => [
+      row.storyId,
+      {
+        rating: Number(row._avg.score ?? 0),
+        rating_count: row._count.storyId ?? 0,
+      },
+    ]),
+  );
+
+  return stories.map((story) => {
+    const summary = ratingMap.get(story.id);
+    return {
+      ...formatStoryCard(story, requester),
+      rating: summary?.rating ?? 0,
+      rating_count: summary?.rating_count ?? 0,
+    };
+  });
+};
+
 const ensureStoryExists = async (storyId) => {
   const normalizedStoryId = normalizeText(storyId);
   if (!normalizedStoryId) throw new Error("Thiáº¿u id truyá»‡n");
@@ -1926,6 +2004,7 @@ module.exports = {
   createStory,
   getMyStories,
   getAdminStories,
+  getPublishedStoriesByAuthor,
   searchStories,
   trackReadEvent,
   likeStory,

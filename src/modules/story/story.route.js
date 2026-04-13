@@ -19,6 +19,11 @@ router.get(
   storyController.getAdminStories,
 );
 router.get("/search", storyController.searchStories);
+router.get(
+  "/author/:authorId",
+  authenticateOptional,
+  storyController.getPublishedStoriesByAuthor,
+);
 router.get("/:id/similar", authenticateOptional, storyController.getSimilarStories);
 router.get(
   "/:id/recommended",

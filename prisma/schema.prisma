@@ -29,10 +29,27 @@ model User {
   readingProgresses     ReadingProgress[]
   readSessions          StoryReadSession[]
   storyRatings          StoryRating[]
+  followingAuthors      AuthorFollow[]        @relation("AuthorFollowing")
+  authorFollowers       AuthorFollow[]        @relation("AuthorFollowers")
   notificationsReceived Notification[]       @relation("UserNotifications")
   notificationsSent     Notification[]       @relation("NotificationActor")
 
   @@map("users")
+}
+
+model AuthorFollow {
+  id         String   @id @default(uuid())
+  followerId String   @map("follower_id")
+  authorId   String   @map("author_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  follower User @relation("AuthorFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  author   User @relation("AuthorFollowers", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, authorId])
+  @@index([authorId, createdAt])
+  @@index([followerId, createdAt])
+  @@map("author_follows")
 }
 
 model RefreshToken {
