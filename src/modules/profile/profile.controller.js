@@ -79,6 +79,46 @@ const updateMe = async (req, res) => {
   }
 };
 
+const changeMyPassword = async (req, res) => {
+  try {
+    const { old_password, new_password, confirm_new_password } = req.body;
+
+    if (!old_password || !new_password || !confirm_new_password) {
+      return res.status(400).json({
+        message: "Vui lòng nhập đủ mật khẩu cũ, mật khẩu mới và xác nhận mật khẩu mới",
+      });
+    }
+
+    const oldPassword = String(old_password);
+    const newPassword = String(new_password);
+    const confirmNewPassword = String(confirm_new_password);
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Mật khẩu mới phải có ít nhất 6 ký tự",
+      });
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      return res.status(400).json({
+        message: "Xác nhận mật khẩu mới không khớp",
+      });
+    }
+
+    await profileService.changeMyPassword({
+      userId: req.user.id,
+      oldPassword,
+      newPassword,
+    });
+
+    return res.json({
+      message: "Đổi mật khẩu thành công. Vui lòng đăng nhập lại trên thiết bị khác nếu cần.",
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const uploadMyAvatar = async (req, res) => {
   try {
     const { avatar_base64 } = req.body;
@@ -159,6 +199,7 @@ module.exports = {
   unfollowAuthor,
   listFollowedAuthors,
   updateMe,
+  changeMyPassword,
   uploadMyAvatar,
   deleteMyAvatar,
   listMyReadingProgress,

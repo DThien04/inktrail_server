@@ -10,6 +10,7 @@ const { upload } = require("../../middlewares/upload.middleware");
 router.get("/me", authenticate, profileController.getMe);
 router.get("/me/following-authors", authenticate, profileController.listFollowedAuthors);
 router.patch("/me", authenticate, upload.single("avatar_file"), profileController.updateMe);
+router.patch("/me/password", authenticate, profileController.changeMyPassword);
 router.post("/me/avatar", authenticate, upload.single("avatar_file"), profileController.uploadMyAvatar);
 router.delete("/me/avatar", authenticate, profileController.deleteMyAvatar);
 router.get("/me/reading-progress", authenticate, profileController.listMyReadingProgress);

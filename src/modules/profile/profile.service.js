@@ -1,4 +1,5 @@
 const prisma = require("../../config/prisma");
+const bcrypt = require("bcryptjs");
 const { uploadAvatarAndGetUrl } = require("../upload/upload.service");
 const notificationService = require("../notification/notification.service");
 
@@ -297,6 +298,46 @@ const updateMyProfile = async ({
   );
 };
 
+const changeMyPassword = async ({ userId, oldPassword, newPassword }) => {
+  const normalizedOldPassword = String(oldPassword ?? "");
+  const normalizedNewPassword = String(newPassword ?? "");
+
+  if (!normalizedOldPassword || !normalizedNewPassword) {
+    throw new Error("Thiếu dữ liệu mật khẩu");
+  }
+
+  if (normalizedNewPassword.length < 6) {
+    throw new Error("Mật khẩu mới phải có ít nhất 6 ký tự");
+  }
+
+  if (normalizedOldPassword === normalizedNewPassword) {
+    throw new Error("Mật khẩu mới phải khác mật khẩu cũ");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, password: true },
+  });
+  if (!user) throw new Error("Không tìm thấy người dùng");
+
+  const isMatch = await bcrypt.compare(normalizedOldPassword, user.password);
+  if (!isMatch) throw new Error("Mật khẩu cũ không đúng");
+
+  const hashedPassword = await bcrypt.hash(normalizedNewPassword, 12);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+
+    // Revoke all refresh tokens after password change for safer sessions.
+    await tx.refreshToken.deleteMany({
+      where: { userId: user.id },
+    });
+  });
+};
+
 const updateMyAvatar = async ({
   userId,
   avatarBase64,
@@ -464,6 +505,7 @@ module.exports = {
   unfollowAuthor,
   listFollowedAuthors,
   updateMyProfile,
+  changeMyPassword,
   updateMyAvatar,
   deleteMyAvatar,
   getMyReadingProgressByStory,
