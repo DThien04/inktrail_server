@@ -1,4 +1,4 @@
-const { handleError } = require("../../utils/error_handle");
+﻿const { handleError } = require("../../utils/error_handle");
 const chapterService = require("./chapter.service");
 
 const createChapter = async (req, res) => {
@@ -141,7 +141,7 @@ const updateComment = async (req, res) => {
     });
 
     res.json({
-      message: "Cap nhat binh luan thanh cong",
+      message: "Cập nhật bình luận thành công",
       comment,
     });
   } catch (err) {

@@ -41,6 +41,30 @@ const getMyStories = async (req, res) => {
   }
 };
 
+const getMyStoryStats = async (req, res) => {
+  try {
+    const result = await storyService.getMyStoryStats({
+      userId: req.user.id,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getMyDashboard = async (req, res) => {
+  try {
+    const result = await storyService.getMyAuthorDashboard({
+      userId: req.user.id,
+    });
+
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getAdminStories = async (req, res) => {
   try {
     const stories = await storyService.getAdminStories({
@@ -367,6 +391,8 @@ const deleteStory = async (req, res) => {
 module.exports = {
   createStory,
   getMyStories,
+  getMyStoryStats,
+  getMyDashboard,
   getAdminStories,
   searchStories,
   getPublishedStoriesByAuthor,

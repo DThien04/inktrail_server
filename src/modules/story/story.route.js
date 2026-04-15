@@ -13,6 +13,18 @@ router.get(
   storyController.getMyStories,
 );
 router.get(
+  "/me/stats",
+  authenticate,
+  authorize("author", "admin"),
+  storyController.getMyStoryStats,
+);
+router.get(
+  "/me/dashboard",
+  authenticate,
+  authorize("author", "admin"),
+  storyController.getMyDashboard,
+);
+router.get(
   "/admin/list",
   authenticate,
   authorize("admin"),

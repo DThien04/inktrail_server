@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
 const { emitChapterComment } = require("../../realtime/socket");
 const {
@@ -34,14 +34,14 @@ const ensureCanManageStory = ({ story, requester }) => {
   const isOwner = story.authorId === requester.id;
   const isAdmin = requester.role === "admin";
   if (!isOwner && !isAdmin) {
-    throw new Error("Bạn không có quyền thao tác chương của truyện này");
+    throw new Error("Báº¡n khÃ´ng cÃ³ quyá»n thao tÃ¡c chÆ°Æ¡ng cá»§a truyá»‡n nÃ y");
   }
 };
 
 const parseChapterNumber = (value) => {
   const num = Number(value);
   if (!Number.isInteger(num) || num <= 0) {
-    throw new Error("chapter_number phải là số nguyên dương");
+    throw new Error("chapter_number pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng");
   }
   return num;
 };
@@ -49,7 +49,7 @@ const parseChapterNumber = (value) => {
 const normalizeStatus = (value, fallback = "draft") => {
   const normalized = normalizeText(value) || fallback;
   if (!ALLOWED_CHAPTER_STATUSES.has(normalized)) {
-    throw new Error("Trạng thái chương không hợp lệ");
+    throw new Error("Tráº¡ng thÃ¡i chÆ°Æ¡ng khÃ´ng há»£p lá»‡");
   }
   return normalized;
 };
@@ -57,12 +57,47 @@ const normalizeStatus = (value, fallback = "draft") => {
 const normalizeMoveDirection = (value) => {
   const normalized = normalizeText(value).toLowerCase();
   if (normalized !== "up" && normalized !== "down") {
-    throw new Error("direction phải là up hoặc down");
+    throw new Error("direction pháº£i lÃ  up hoáº·c down");
   }
   return normalized;
 };
 
 const ensureChapterCanBeLiked = async ({ chapterId, requester }) => {
+  const normalizedChapterId = normalizeText(chapterId);
+  if (!normalizedChapterId) throw new Error("ThiÃ¡ÂºÂ¿u id chÃ†Â°Ã†Â¡ng");
+
+  const chapter = await prisma.chapter.findUnique({
+    where: { id: normalizedChapterId },
+    include: {
+      story: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          authorId: true,
+          status: true,
+        },
+      },
+    },
+  });
+  if (!chapter) throw new Error("KhÃƒÂ´ng tÃƒÂ¬m thÃ¡ÂºÂ¥y chÃ†Â°Ã†Â¡ng");
+
+  const isOwner = requester?.id && chapter.story.authorId === requester.id;
+  const isAdmin = requester?.role === "admin";
+  const canViewDraft = Boolean(isOwner || isAdmin);
+
+  if (chapter.story.status !== "published" && !canViewDraft) {
+    throw new Error("TruyÃ¡Â»â€¡n chÃ†Â°a Ã„â€˜Ã†Â°Ã¡Â»Â£c xuÃ¡ÂºÂ¥t bÃ¡ÂºÂ£n");
+  }
+
+  if (chapter.status !== "published" && !canViewDraft) {
+    throw new Error("ChÃ†Â°Ã†Â¡ng chÃ†Â°a Ã„â€˜Ã†Â°Ã¡Â»Â£c xuÃ¡ÂºÂ¥t bÃ¡ÂºÂ£n");
+  }
+
+  return chapter;
+};
+
+const ensureChapterCanBeCommented = async ({ chapterId, requester }) => {
   const normalizedChapterId = normalizeText(chapterId);
   if (!normalizedChapterId) throw new Error("Thiáº¿u id chÆ°Æ¡ng");
 
@@ -97,41 +132,6 @@ const ensureChapterCanBeLiked = async ({ chapterId, requester }) => {
   return chapter;
 };
 
-const ensureChapterCanBeCommented = async ({ chapterId, requester }) => {
-  const normalizedChapterId = normalizeText(chapterId);
-  if (!normalizedChapterId) throw new Error("Thiếu id chương");
-
-  const chapter = await prisma.chapter.findUnique({
-    where: { id: normalizedChapterId },
-    include: {
-      story: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          authorId: true,
-          status: true,
-        },
-      },
-    },
-  });
-  if (!chapter) throw new Error("Không tìm thấy chương");
-
-  const isOwner = requester?.id && chapter.story.authorId === requester.id;
-  const isAdmin = requester?.role === "admin";
-  const canViewDraft = Boolean(isOwner || isAdmin);
-
-  if (chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyện chưa được xuất bản");
-  }
-
-  if (chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chương chưa được xuất bản");
-  }
-
-  return chapter;
-};
-
 const formatChapterComment = (comment, requester, featuredCommentId = null) => ({
   id: comment.id,
   user_id: comment.userId,
@@ -155,9 +155,9 @@ const formatChapterComment = (comment, requester, featuredCommentId = null) => (
 
 const validateCommentContent = (content) => {
   const normalizedContent = normalizeText(content);
-  if (!normalizedContent) throw new Error("Nội dung bình luận không được để trống");
+  if (!normalizedContent) throw new Error("Ná»™i dung bÃ¬nh luáº­n khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
   if (normalizedContent.length > 2000) {
-    throw new Error("Nội dung bình luận tối đa 2000 ký tự");
+    throw new Error("Ná»™i dung bÃ¬nh luáº­n tá»‘i Ä‘a 2000 kÃ½ tá»±");
   }
   return normalizedContent;
 };
@@ -174,16 +174,16 @@ const createChapter = async ({
     where: { id: storyId },
     select: { id: true, authorId: true },
   });
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
 
   ensureCanManageStory({ story, requester });
 
   const normalizedTitle = normalizeText(title);
-  if (!normalizedTitle) throw new Error("Tiêu đề chương không được để trống");
-  if (normalizedTitle.length > 255) throw new Error("Tiêu đề chương tối đa 255 ký tự");
+  if (!normalizedTitle) throw new Error("TiÃªu Ä‘á» chÆ°Æ¡ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+  if (normalizedTitle.length > 255) throw new Error("TiÃªu Ä‘á» chÆ°Æ¡ng tá»‘i Ä‘a 255 kÃ½ tá»±");
 
   const normalizedContent = normalizeText(content);
-  if (!normalizedContent) throw new Error("Nội dung chương không được để trống");
+  if (!normalizedContent) throw new Error("Ná»™i dung chÆ°Æ¡ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
 
   const normalizedChapterNumber = parseChapterNumber(chapterNumber);
   const normalizedStatus = normalizeStatus(status);
@@ -197,7 +197,7 @@ const createChapter = async ({
     },
     select: { id: true },
   });
-  if (existed) throw new Error("Số chương đã tồn tại trong truyện này");
+  if (existed) throw new Error("Sá»‘ chÆ°Æ¡ng Ä‘Ã£ tá»“n táº¡i trong truyá»‡n nÃ y");
 
   const chapter = await prisma.chapter.create({
     data: {
@@ -218,11 +218,14 @@ const getChaptersByStory = async ({ storyId, requester }) => {
     where: { id: storyId },
     select: { id: true, authorId: true, status: true },
   });
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n");
 
   const isOwner = requester?.id && story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
+  if (story.status !== "published" && !canViewDraft) {
+    throw new Error("Truyện chưa được xuất bản");
+  }
 
   const chapters = await prisma.chapter.findMany({
     where: {
@@ -279,13 +282,13 @@ const getChapterDetail = async ({ chapterId, requester }) => {
       },
     },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
 
   const isOwner = requester?.id && chapter.story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
   if (chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chương chưa được xuất bản");
+    throw new Error("ChÆ°Æ¡ng chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
   }
 
   return {
@@ -370,7 +373,7 @@ const listChapterComments = async ({ chapterId, requester, sort, limit }) => {
 
 const ensureChapterCommentCanBeLiked = async ({ commentId, requester }) => {
   const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thiếu id bình luận");
+  if (!normalizedCommentId) throw new Error("Thiáº¿u id bÃ¬nh luáº­n");
 
   const comment = await prisma.chapterComment.findUnique({
     where: { id: normalizedCommentId },
@@ -391,18 +394,18 @@ const ensureChapterCommentCanBeLiked = async ({ commentId, requester }) => {
     },
   });
 
-  if (!comment) throw new Error("Không tìm thấy bình luận");
+  if (!comment) throw new Error("KhÃ´ng tÃ¬m tháº¥y bÃ¬nh luáº­n");
 
   const isOwner = requester?.id && comment.chapter.story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
 
   if (comment.chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyện chưa được xuất bản");
+    throw new Error("Truyá»‡n chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
   }
 
   if (comment.chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chương chưa được xuất bản");
+    throw new Error("ChÆ°Æ¡ng chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
   }
 
   return comment;
@@ -459,7 +462,7 @@ const ensureChapterCommentCanBeManaged = async ({ commentId, requester }) => {
 };
 
 const createChapterComment = async ({ chapterId, requester, content }) => {
-  if (!requester?.id) throw new Error("Chưa đăng nhập");
+  if (!requester?.id) throw new Error("ChÆ°a Ä‘Äƒng nháº­p");
 
   const chapter = await ensureChapterCanBeCommented({ chapterId, requester });
   const normalizedContent = validateCommentContent(content);
@@ -810,7 +813,7 @@ const getChapterFeaturedComment = async ({ chapterId, requester }) => {
 
 const recomputeChapterFeaturedByChapterId = async ({ chapterId, requester }) => {
   const normalizedChapterId = normalizeText(chapterId);
-  if (!normalizedChapterId) throw new Error("Thiếu id chương");
+  if (!normalizedChapterId) throw new Error("Thiáº¿u id chÆ°Æ¡ng");
 
   const chapter = await prisma.chapter.findUnique({
     where: { id: normalizedChapterId },
@@ -820,7 +823,7 @@ const recomputeChapterFeaturedByChapterId = async ({ chapterId, requester }) => 
       },
     },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
   ensureCanManageStory({ story: chapter.story, requester });
 
   const featuredCommentId = await prisma.$transaction((tx) =>
@@ -907,7 +910,7 @@ const likeChapter = async ({ chapterId, requester }) => {
       storyId: chapter.story.id,
       chapterId: chapter.id,
       type: "chapter_liked",
-      title: `${getRequesterDisplayName(requester)} đã thích chương ${chapter.chapterNumber} của truyện ${chapter.story.title}`,
+      title: `${getRequesterDisplayName(requester)} Ä‘Ã£ thÃ­ch chÆ°Æ¡ng ${chapter.chapterNumber} cá»§a truyá»‡n ${chapter.story.title}`,
       body: chapter.title,
       linkUrl: `/stories/${chapter.story.slug}/chapters/${chapter.id}`,
       meta: {
@@ -996,7 +999,7 @@ const updateChapter = async ({
     where: { id: chapterId },
     include: { story: { select: { id: true, authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
 
   ensureCanManageStory({ story: chapter.story, requester });
 
@@ -1004,16 +1007,16 @@ const updateChapter = async ({
 
   if (title !== undefined) {
     const normalizedTitle = normalizeText(title);
-    if (!normalizedTitle) throw new Error("Tiêu đề chương không được để trống");
+    if (!normalizedTitle) throw new Error("TiÃªu Ä‘á» chÆ°Æ¡ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
     if (normalizedTitle.length > 255) {
-      throw new Error("Tiêu đề chương tối đa 255 ký tự");
+      throw new Error("TiÃªu Ä‘á» chÆ°Æ¡ng tá»‘i Ä‘a 255 kÃ½ tá»±");
     }
     data.title = normalizedTitle;
   }
 
   if (content !== undefined) {
     const normalizedContent = normalizeText(content);
-    if (!normalizedContent) throw new Error("Nội dung chương không được để trống");
+    if (!normalizedContent) throw new Error("Ná»™i dung chÆ°Æ¡ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
     data.content = normalizedContent;
   }
 
@@ -1030,7 +1033,7 @@ const updateChapter = async ({
     });
 
     if (existed && existed.id !== chapter.id) {
-      throw new Error("Số chương đã tồn tại trong truyện này");
+      throw new Error("Sá»‘ chÆ°Æ¡ng Ä‘Ã£ tá»“n táº¡i trong truyá»‡n nÃ y");
     }
     data.chapterNumber = normalizedChapterNumber;
   }
@@ -1047,7 +1050,7 @@ const updateChapter = async ({
   }
 
   if (!Object.keys(data).length) {
-    throw new Error("Không có dữ liệu hợp lệ để cập nhật");
+    throw new Error("KhÃ´ng cÃ³ dá»¯ liá»‡u há»£p lá»‡ Ä‘á»ƒ cáº­p nháº­t");
   }
 
   const updatedChapter = await prisma.chapter.update({
@@ -1065,7 +1068,7 @@ const moveChapter = async ({ chapterId, requester, direction }) => {
     where: { id: chapterId },
     include: { story: { select: { id: true, authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
 
   ensureCanManageStory({ story: chapter.story, requester });
 
@@ -1085,8 +1088,8 @@ const moveChapter = async ({ chapterId, requester, direction }) => {
   if (!neighbor) {
     throw new Error(
       normalizedDirection === "up"
-        ? "Chương này đã ở đầu danh sách"
-        : "Chương này đã ở cuối danh sách",
+        ? "ChÆ°Æ¡ng nÃ y Ä‘Ã£ á»Ÿ Ä‘áº§u danh sÃ¡ch"
+        : "ChÆ°Æ¡ng nÃ y Ä‘Ã£ á»Ÿ cuá»‘i danh sÃ¡ch",
     );
   }
 
@@ -1119,12 +1122,12 @@ const deleteChapter = async ({ chapterId, requester }) => {
     where: { id: chapterId },
     include: { story: { select: { authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
 
   ensureCanManageStory({ story: chapter.story, requester });
 
   await prisma.chapter.delete({ where: { id: chapter.id } });
-  return { message: "Xóa chương thành công" };
+  return { message: "XÃ³a chÆ°Æ¡ng thÃ nh cÃ´ng" };
 };
 
 module.exports = {
@@ -1145,3 +1148,4 @@ module.exports = {
   moveChapter,
   deleteChapter,
 };
+
