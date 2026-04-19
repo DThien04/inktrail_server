@@ -1,10 +1,5 @@
 ﻿const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
-const { emitStoryComment } = require("../../realtime/socket");
-const {
-  recomputeStoryFeaturedComments: recomputeStoryFeaturedRanking,
-  getStoryFeaturedCommentIds,
-} = require("../comment/comment-featured.service");
 const {
   uploadStoryCoverAndGetUrl,
   deleteFileByPublicUrl,
@@ -26,6 +21,51 @@ const QUALIFIED_CHAPTER_INDEX = 1;
 const READ_COUNT_WINDOW_HOURS = 24;
 const MIN_STORY_RATING = 1;
 const MAX_STORY_RATING = 5;
+const STORY_CHAPTER_FEATURED_LIMIT = 4;
+const STORY_CHAPTER_FEATURED_LOOKBACK_HOURS = 72;
+const MAX_STORY_CHAPTER_COMMENT_CANDIDATES = 300;
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const getCommentLikeCount = (comment) =>
+  typeof comment?.stats?.likeCount === "number" ? comment.stats.likeCount : 0;
+
+const getCommentAgeHours = (createdAt) => {
+  if (!(createdAt instanceof Date)) return 9999;
+  return Math.max(0, (Date.now() - createdAt.getTime()) / 3600000);
+};
+
+const scoreStoryChapterComment = (comment) => {
+  const likeCount = getCommentLikeCount(comment);
+  const ageHours = getCommentAgeHours(comment.createdAt);
+  const freshness = clamp(
+    (STORY_CHAPTER_FEATURED_LOOKBACK_HOURS - ageHours) /
+      STORY_CHAPTER_FEATURED_LOOKBACK_HOURS,
+    0,
+    1,
+  );
+  const contentLength = String(comment.content || "").trim().length;
+  const qualityBoost = clamp(contentLength / 280, 0, 1);
+  return likeCount * 3 + freshness * 2 + qualityBoost;
+};
+
+const rankStoryChapterComments = (comments) =>
+  [...comments]
+    .map((comment) => ({
+      comment,
+      score: scoreStoryChapterComment(comment),
+      likeCount: getCommentLikeCount(comment),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.likeCount !== a.likeCount) return b.likeCount - a.likeCount;
+      const aTs =
+        a.comment.createdAt instanceof Date ? a.comment.createdAt.getTime() : 0;
+      const bTs =
+        b.comment.createdAt instanceof Date ? b.comment.createdAt.getTime() : 0;
+      if (bTs !== aTs) return bTs - aTs;
+      return String(a.comment.id).localeCompare(String(b.comment.id));
+    });
 
 const slugify = (value) => {
   const base = normalizeText(value)
@@ -85,7 +125,7 @@ const formatStory = (story) => ({
 const formatStoryCard = (story, requester) => ({
   ...formatStory(story),
   chapter_count: typeof story._count?.chapters === "number" ? story._count.chapters : 0,
-  is_liked: Array.isArray(story.likes) ? story.likes.length > 0 : false,
+  is_liked: false,
   author: story.author
     ? {
         id: story.author.id,
@@ -94,6 +134,29 @@ const formatStoryCard = (story, requester) => ({
       }
     : null,
 });
+
+const getStoryChapterEngagementSummary = async ({ storyId }) => {
+  const chapters = await prisma.chapter.findMany({
+    where: { storyId },
+    select: {
+      stats: {
+        select: {
+          likeCount: true,
+          commentCount: true,
+        },
+      },
+    },
+  });
+
+  return chapters.reduce(
+    (acc, chapter) => {
+      acc.like_count += chapter.stats?.likeCount ?? 0;
+      acc.comment_count += chapter.stats?.commentCount ?? 0;
+      return acc;
+    },
+    { like_count: 0, comment_count: 0 },
+  );
+};
 
 const recommendationStoryInclude = (requester) => ({
   stats: {
@@ -110,13 +173,6 @@ const recommendationStoryInclude = (requester) => ({
   _count: {
     select: { chapters: true },
   },
-  likes: requester?.id
-    ? {
-        where: { userId: requester.id },
-        select: { id: true },
-        take: 1,
-      }
-    : false,
 });
 
 const attachRatingsToStoryDtos = async (storyDtos) => {
@@ -762,13 +818,6 @@ const getPublishedStoriesByAuthor = async ({ authorId, requester, limit }) => {
       _count: {
         select: { chapters: true },
       },
-      likes: requester?.id
-        ? {
-            where: { userId: requester.id },
-            select: { id: true },
-            take: 1,
-          }
-        : false,
     },
   });
 
@@ -932,27 +981,6 @@ const formatStoryRating = (row, requester) => ({
         role: row.user.role,
       }
     : null,
-});
-
-const formatStoryComment = (comment, requester, featuredCommentIds = []) => ({
-  id: comment.id,
-  user_id: comment.userId,
-  story_id: comment.storyId,
-  content: comment.content,
-  like_count:
-    typeof comment.stats?.likeCount === "number" ? comment.stats.likeCount : 0,
-  is_edited: comment.isEdited,
-  created_at: comment.createdAt,
-  updated_at: comment.updatedAt,
-  is_mine: Boolean(requester?.id && comment.userId === requester.id),
-  is_liked: Array.isArray(comment.likes) ? comment.likes.length > 0 : false,
-  is_highlighted: featuredCommentIds.includes(comment.id),
-  user: {
-    id: comment.user.id,
-    display_name: comment.user.displayName,
-    avatar_url: comment.user.avatarUrl,
-    role: comment.user.role,
-  },
 });
 
 const validateCommentContent = (content) => {
@@ -1135,147 +1163,6 @@ const trackReadEvent = async ({
     read_count_incremented: true,
     read_count: updatedStats.readCount,
   };
-};
-
-const likeStory = async ({ storyId, requester }) => {
-  const story = await ensureStoryCanBeLiked({ storyId, requester });
-
-  const result = await prisma.$transaction(async (tx) => {
-    const existed = await tx.storyLike.findUnique({
-      where: {
-        userId_storyId: {
-          userId: requester.id,
-          storyId: story.id,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (existed) {
-      const stats = await tx.storyStat.upsert({
-        where: { storyId: story.id },
-        create: {
-          storyId: story.id,
-          readCount: 0,
-          likeCount: 1,
-        },
-        update: {},
-        select: { likeCount: true },
-      });
-
-      return {
-        liked: true,
-        like_count: stats.likeCount,
-        should_notify: false,
-      };
-    }
-
-    await tx.storyLike.create({
-      data: {
-        userId: requester.id,
-        storyId: story.id,
-      },
-    });
-
-    const stats = await tx.storyStat.upsert({
-      where: { storyId: story.id },
-      create: {
-        storyId: story.id,
-        readCount: 0,
-        likeCount: 1,
-      },
-      update: {
-        likeCount: { increment: 1 },
-      },
-      select: { likeCount: true },
-    });
-
-    return {
-      liked: true,
-      like_count: stats.likeCount,
-      should_notify: true,
-    };
-  });
-
-  if (result.should_notify && requester.id !== story.authorId) {
-    await notificationService.createNotification({
-      recipientId: story.authorId,
-      actorId: requester.id,
-      storyId: story.id,
-      type: "story_liked",
-      title: `${getRequesterDisplayName(requester)} đã thích truyện của bạn`,
-      body: story.title,
-      linkUrl: `/stories/${story.slug}`,
-      meta: {
-        story_title: story.title,
-      },
-    });
-  }
-
-  return {
-    liked: result.liked,
-    like_count: result.like_count,
-  };
-};
-
-const unlikeStory = async ({ storyId, requester }) => {
-  const story = await ensureStoryCanBeLiked({ storyId, requester });
-
-  return prisma.$transaction(async (tx) => {
-    const existed = await tx.storyLike.findUnique({
-      where: {
-        userId_storyId: {
-          userId: requester.id,
-          storyId: story.id,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (!existed) {
-      const stats = await tx.storyStat.findUnique({
-        where: { storyId: story.id },
-        select: { likeCount: true },
-      });
-
-      return {
-        liked: false,
-        like_count: stats?.likeCount ?? 0,
-      };
-    }
-
-    await tx.storyLike.delete({
-      where: {
-        userId_storyId: {
-          userId: requester.id,
-          storyId: story.id,
-        },
-      },
-    });
-
-    const currentStats = await tx.storyStat.findUnique({
-      where: { storyId: story.id },
-      select: { likeCount: true },
-    });
-
-    if (!currentStats) {
-      return {
-        liked: false,
-        like_count: 0,
-      };
-    }
-
-    const updatedStats = await tx.storyStat.update({
-      where: { storyId: story.id },
-      data: { likeCount: Math.max(0, currentStats.likeCount - 1) },
-      select: { likeCount: true },
-    });
-
-    return {
-      liked: false,
-      like_count: updatedStats.likeCount,
-    };
-  });
 };
 
 const getMyStoryRating = async ({ storyId, requester }) => {
@@ -1498,13 +1385,6 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
           bio: true,
         },
       },
-      likes: requester?.id
-        ? {
-            where: { userId: requester.id },
-            select: { id: true },
-            take: 1,
-          }
-        : false,
       storyGenres: {
         include: {
           genre: { select: { id: true, name: true, slug: true } },
@@ -1525,16 +1405,19 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
     storyId: story.id,
     requester,
   });
+  const engagementSummary = await getStoryChapterEngagementSummary({
+    storyId: story.id,
+  });
 
   return {
     ...formatStory(story),
+    like_count: engagementSummary.like_count,
     rating: ratingSummary.rating,
     rating_count: ratingSummary.rating_count,
     my_rating: ratingSummary.my_rating,
     chapter_count: story._count.chapters,
-    comment_count:
-      typeof story.stats?.commentCount === "number" ? story.stats.commentCount : 0,
-    is_liked: Array.isArray(story.likes) ? story.likes.length > 0 : false,
+    comment_count: engagementSummary.comment_count,
+    is_liked: false,
     author: {
       id: story.author.id,
       display_name: story.author.displayName,
@@ -1550,447 +1433,24 @@ const getStoryDetailBySlug = async ({ slug, requester }) => {
   };
 };
 
-const listStoryComments = async ({ storyId, requester, sort, limit }) => {
-  const story = await ensureStoryCanBeCommented({ storyId, requester });
-  const normalizedSort = normalizeText(sort).toLowerCase();
-
-  let take = Number(limit);
-  if (!Number.isInteger(take) || take <= 0) take = 20;
-  take = Math.min(take, 100);
-
-  const orderBy =
-    normalizedSort === "oldest"
-      ? [{ createdAt: "asc" }, { id: "asc" }]
-      : [{ createdAt: "desc" }, { id: "desc" }];
-
-  const comments = await prisma.storyComment.findMany({
-    where: { storyId: story.id },
-    orderBy,
-    take,
-    include: {
-      stats: {
-        select: { likeCount: true },
-      },
-      likes: requester?.id
-        ? {
-            where: { userId: requester.id },
-            select: { id: true },
-            take: 1,
-          }
-        : false,
-      user: {
-        select: {
-          id: true,
-          displayName: true,
-          avatarUrl: true,
-          role: true,
-        },
-      },
-    },
-  });
-
-  const commentCount = await prisma.storyStat.findUnique({
-    where: { storyId: story.id },
-    select: { commentCount: true },
-  });
-  const featuredCommentIds = await getStoryFeaturedCommentIds({ storyId: story.id });
-
-  return {
-    story: {
-      id: story.id,
-      title: story.title,
-      slug: story.slug,
-    },
-    total: commentCount?.commentCount ?? comments.length,
-    featured_comment_ids: featuredCommentIds,
-    items: comments.map((comment) =>
-      formatStoryComment(comment, requester, featuredCommentIds),
-    ),
-  };
-};
-
-const ensureStoryCommentCanBeLiked = async ({ commentId, requester }) => {
-  const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thiếu id bình luận");
-
-  const comment = await prisma.storyComment.findUnique({
-    where: { id: normalizedCommentId },
-    include: {
-      story: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          authorId: true,
-          status: true,
-        },
-      },
-    },
-  });
-
-  if (!comment) throw new Error("Không tìm thấy bình luận");
-
-  const isOwner = requester?.id && comment.story.authorId === requester.id;
-  const isAdmin = requester?.role === "admin";
-  if (comment.story.status !== "published" && !isOwner && !isAdmin) {
-    throw new Error("Truyện chưa được xuất bản");
-  }
-
-  return comment;
-};
-
-const ensureStoryCommentCanBeManaged = async ({ commentId, requester }) => {
-  if (!requester?.id) throw new Error("Chua dang nhap");
-
-  const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thieu id binh luan");
-
-  const comment = await prisma.storyComment.findUnique({
-    where: { id: normalizedCommentId },
-    include: {
-      story: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          authorId: true,
-        },
-      },
-      user: {
-        select: {
-          id: true,
-          displayName: true,
-          avatarUrl: true,
-          role: true,
-        },
-      },
-      stats: {
-        select: { likeCount: true },
-      },
-      likes: {
-        where: { userId: requester.id },
-        select: { id: true },
-        take: 1,
-      },
-    },
-  });
-
-  if (!comment) throw new Error("Khong tim thay binh luan");
-
-  const isCommentOwner = comment.userId === requester.id;
-  const isStoryOwner = comment.story.authorId === requester.id;
-  const isAdmin = requester.role === "admin";
-  if (!isCommentOwner && !isStoryOwner && !isAdmin) {
-    throw new Error("Ban khong co quyen thao tac binh luan nay");
-  }
-
-  return comment;
-};
-
-const createStoryComment = async ({ storyId, requester, content }) => {
-  if (!requester?.id) throw new Error("Chưa đăng nhập");
-
-  const story = await ensureStoryCanBeCommented({ storyId, requester });
-  const normalizedContent = validateCommentContent(content);
-
-  const createdComment = await prisma.$transaction(async (tx) => {
-    const comment = await tx.storyComment.create({
-      data: {
-        userId: requester.id,
-        storyId: story.id,
-        content: normalizedContent,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-            role: true,
-          },
-        },
-      },
-    });
-
-    await tx.storyStat.upsert({
-      where: { storyId: story.id },
-      create: {
-        storyId: story.id,
-        readCount: 0,
-        likeCount: 0,
-        commentCount: 1,
-      },
-      update: {
-        commentCount: { increment: 1 },
-      },
-    });
-    await recomputeStoryFeaturedRanking({ tx, storyId: story.id });
-
-    return comment;
-  });
-
-  const payload = formatStoryComment(createdComment, requester);
-  emitStoryComment(story.id, payload);
-
-  if (requester.id !== story.authorId) {
-    await notificationService.createNotification({
-      recipientId: story.authorId,
-      actorId: requester.id,
-      storyId: story.id,
-      type: "story_commented",
-      title: `${getRequesterDisplayName(requester)} đã bình luận về truyện của bạn`,
-      body: normalizedContent,
-      linkUrl: `/stories/${story.slug}`,
-      meta: {
-        story_title: story.title,
-        comment_preview: normalizedContent.slice(0, 120),
-      },
-    });
-  }
-
-  return payload;
-};
-
-const likeStoryComment = async ({ commentId, requester }) => {
-  const comment = await ensureStoryCommentCanBeLiked({ commentId, requester });
-
-  const result = await prisma.$transaction(async (tx) => {
-    const existed = await tx.storyCommentLike.findUnique({
-      where: {
-        userId_commentId: {
-          userId: requester.id,
-          commentId: comment.id,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (existed) {
-      const stats = await tx.storyCommentStat.upsert({
-        where: { commentId: comment.id },
-        create: {
-          commentId: comment.id,
-          likeCount: 1,
-        },
-        update: {},
-        select: { likeCount: true },
-      });
-      await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
-
-      return {
-        liked: true,
-        like_count: stats.likeCount,
-        should_notify: false,
-      };
-    }
-
-    await tx.storyCommentLike.create({
-      data: {
-        userId: requester.id,
-        commentId: comment.id,
-      },
-    });
-
-    const stats = await tx.storyCommentStat.upsert({
-      where: { commentId: comment.id },
-      create: {
-        commentId: comment.id,
-        likeCount: 1,
-      },
-      update: {
-        likeCount: { increment: 1 },
-      },
-      select: { likeCount: true },
-    });
-    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
-
-    return {
-      liked: true,
-      like_count: stats.likeCount,
-      should_notify: requester.id !== comment.userId,
-    };
-  });
-
-  if (result.should_notify) {
-    await notificationService.createNotification({
-      recipientId: comment.userId,
-      actorId: requester.id,
-      storyId: comment.storyId,
-      type: "system",
-      title: `${getRequesterDisplayName(requester)} da thich binh luan cua ban`,
-      body: comment.content,
-      linkUrl: `/stories/${comment.story.slug}`,
-      meta: {
-        story_title: comment.story.title,
-        comment_id: comment.id,
-        comment_preview: String(comment.content || "").slice(0, 120),
-      },
-    });
-  }
-
-  return {
-    liked: result.liked,
-    like_count: result.like_count,
-  };
-};
-
-const unlikeStoryComment = async ({ commentId, requester }) => {
-  const comment = await ensureStoryCommentCanBeLiked({ commentId, requester });
-
-  return prisma.$transaction(async (tx) => {
-    const existed = await tx.storyCommentLike.findUnique({
-      where: {
-        userId_commentId: {
-          userId: requester.id,
-          commentId: comment.id,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (!existed) {
-      const stats = await tx.storyCommentStat.findUnique({
-        where: { commentId: comment.id },
-        select: { likeCount: true },
-      });
-
-      return {
-        liked: false,
-        like_count: stats?.likeCount ?? 0,
-      };
-    }
-
-    await tx.storyCommentLike.delete({
-      where: {
-        userId_commentId: {
-          userId: requester.id,
-          commentId: comment.id,
-        },
-      },
-    });
-
-    const currentStats = await tx.storyCommentStat.findUnique({
-      where: { commentId: comment.id },
-      select: { likeCount: true },
-    });
-
-    if (!currentStats) {
-      return {
-        liked: false,
-        like_count: 0,
-      };
-    }
-
-    const updatedStats = await tx.storyCommentStat.update({
-      where: { commentId: comment.id },
-      data: { likeCount: Math.max(0, currentStats.likeCount - 1) },
-      select: { likeCount: true },
-    });
-    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
-
-    return {
-      liked: false,
-      like_count: updatedStats.likeCount,
-    };
-  });
-};
-
-const updateStoryComment = async ({ commentId, requester, content }) => {
-  const comment = await ensureStoryCommentCanBeManaged({ commentId, requester });
-  const normalizedContent = validateCommentContent(content);
-
-  const updatedComment = await prisma.$transaction(async (tx) => {
-    const updated = await tx.storyComment.update({
-      where: { id: comment.id },
-      data: {
-        content: normalizedContent,
-        isEdited: true,
-      },
-      include: {
-        stats: {
-          select: { likeCount: true },
-        },
-        likes: {
-          where: { userId: requester.id },
-          select: { id: true },
-          take: 1,
-        },
-        user: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-            role: true,
-          },
-        },
-      },
-    });
-
-    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
-    return updated;
-  });
-
-  const featuredCommentIds = await getStoryFeaturedCommentIds({
-    storyId: comment.storyId,
-  });
-  return formatStoryComment(updatedComment, requester, featuredCommentIds);
-};
-
-const deleteStoryComment = async ({ commentId, requester }) => {
-  const comment = await ensureStoryCommentCanBeManaged({ commentId, requester });
-
-  return prisma.$transaction(async (tx) => {
-    await tx.storyComment.delete({
-      where: { id: comment.id },
-    });
-
-    const currentStats = await tx.storyStat.findUnique({
-      where: { storyId: comment.storyId },
-      select: { commentCount: true },
-    });
-
-    let nextCommentCount = 0;
-    if (currentStats) {
-      nextCommentCount = Math.max(0, currentStats.commentCount - 1);
-      await tx.storyStat.update({
-        where: { storyId: comment.storyId },
-        data: { commentCount: nextCommentCount },
-      });
-    }
-
-    await recomputeStoryFeaturedRanking({ tx, storyId: comment.storyId });
-
-    return {
-      deleted: true,
-      comment_id: comment.id,
-      story_id: comment.storyId,
-      comment_count: nextCommentCount,
-    };
-  });
-};
-
 const getStoryFeaturedComments = async ({ storyId, requester }) => {
   const story = await ensureStoryCanBeCommented({ storyId, requester });
-  const featuredCommentIds = await getStoryFeaturedCommentIds({ storyId: story.id });
-
-  if (!featuredCommentIds.length) {
-    return {
-      story: {
-        id: story.id,
-        title: story.title,
-        slug: story.slug,
-      },
-      featured_comment_ids: [],
-      items: [],
-    };
-  }
-
-  const comments = await prisma.storyComment.findMany({
+  const comments = await prisma.chapterComment.findMany({
     where: {
-      storyId: story.id,
-      id: { in: featuredCommentIds },
+      chapter: {
+        storyId: story.id,
+      },
     },
+    take: MAX_STORY_CHAPTER_COMMENT_CANDIDATES,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     include: {
+      chapter: {
+        select: {
+          id: true,
+          chapterNumber: true,
+          title: true,
+        },
+      },
       stats: {
         select: { likeCount: true },
       },
@@ -2012,37 +1472,34 @@ const getStoryFeaturedComments = async ({ storyId, requester }) => {
     },
   });
 
-  const commentsById = new Map(comments.map((item) => [item.id, item]));
-  const items = featuredCommentIds
-    .map((id) => commentsById.get(id))
-    .filter(Boolean)
-    .map((comment) => formatStoryComment(comment, requester, featuredCommentIds));
-
-  return {
-    story: {
-      id: story.id,
-      title: story.title,
-      slug: story.slug,
-    },
-    featured_comment_ids: featuredCommentIds,
-    items,
-  };
-};
-
-const recomputeStoryFeaturedByStoryId = async ({ storyId, requester }) => {
-  const normalizedStoryId = normalizeText(storyId);
-  if (!normalizedStoryId) throw new Error("Thiếu id truyện");
-
-  const story = await prisma.story.findUnique({
-    where: { id: normalizedStoryId },
-    select: { id: true, title: true, slug: true, authorId: true },
-  });
-  if (!story) throw new Error("Không tìm thấy truyện");
-  ensureStoryOwnerOrAdmin({ story, requester });
-
-  const featuredCommentIds = await prisma.$transaction((tx) =>
-    recomputeStoryFeaturedRanking({ tx, storyId: story.id }),
+  const ranked = rankStoryChapterComments(comments).slice(
+    0,
+    STORY_CHAPTER_FEATURED_LIMIT,
   );
+  const items = ranked.map(({ comment }) => ({
+    id: comment.id,
+    user_id: comment.userId,
+    chapter_id: comment.chapterId,
+    content: comment.content,
+    like_count: getCommentLikeCount(comment),
+    is_edited: comment.isEdited,
+    created_at: comment.createdAt,
+    updated_at: comment.updatedAt,
+    is_mine: Boolean(requester?.id && comment.userId === requester.id),
+    is_liked: Array.isArray(comment.likes) ? comment.likes.length > 0 : false,
+    is_highlighted: true,
+    user: {
+      id: comment.user.id,
+      display_name: comment.user.displayName,
+      avatar_url: comment.user.avatarUrl,
+      role: comment.user.role,
+    },
+    chapter: {
+      id: comment.chapter.id,
+      chapter_number: comment.chapter.chapterNumber,
+      title: comment.chapter.title,
+    },
+  }));
 
   return {
     story: {
@@ -2050,7 +1507,8 @@ const recomputeStoryFeaturedByStoryId = async ({ storyId, requester }) => {
       title: story.title,
       slug: story.slug,
     },
-    featured_comment_ids: featuredCommentIds,
+    featured_comment_ids: items.map((item) => item.id),
+    items,
   };
 };
 
@@ -2133,8 +1591,13 @@ const getRecommendedStories = async ({ storyId, requester, limit }) => {
   const baseStory = await ensureStoryCanBeCommented({ storyId, requester });
   const take = parseRecommendationLimit(limit);
 
-  const likedUsers = await prisma.storyLike.findMany({
-    where: { storyId: baseStory.id },
+  const likedUsers = await prisma.chapterLike.findMany({
+    where: {
+      chapter: {
+        storyId: baseStory.id,
+      },
+    },
+    distinct: ["userId"],
     select: { userId: true },
     take: 500,
   });
@@ -2144,13 +1607,20 @@ const getRecommendedStories = async ({ storyId, requester, limit }) => {
     return getSimilarStories({ storyId: baseStory.id, requester, limit: take });
   }
 
-  const coLikeRows = await prisma.storyLike.findMany({
+  const coLikeRows = await prisma.chapterLike.findMany({
     where: {
       userId: { in: userIds },
-      storyId: { not: baseStory.id },
-      story: { status: "published" },
+      chapter: {
+        storyId: { not: baseStory.id },
+        story: { status: "published" },
+      },
     },
-    select: { storyId: true },
+    select: {
+      userId: true,
+      chapter: {
+        select: { storyId: true },
+      },
+    },
     take: 5000,
   });
 
@@ -2159,8 +1629,14 @@ const getRecommendedStories = async ({ storyId, requester, limit }) => {
   }
 
   const scoreByStoryId = new Map();
+  const seenPairs = new Set();
   for (const row of coLikeRows) {
-    scoreByStoryId.set(row.storyId, (scoreByStoryId.get(row.storyId) || 0) + 1);
+    const storyId = row.chapter?.storyId;
+    if (!storyId) continue;
+    const pairKey = `${row.userId}:${storyId}`;
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+    scoreByStoryId.set(storyId, (scoreByStoryId.get(storyId) || 0) + 1);
   }
 
   const rankedStoryIds = Array.from(scoreByStoryId.entries())
@@ -2347,19 +1823,10 @@ module.exports = {
   getPublishedStoriesByAuthor,
   searchStories,
   trackReadEvent,
-  likeStory,
-  unlikeStory,
   listStoryRatings,
   getMyStoryRating,
   upsertStoryRating,
-  listStoryComments,
-  createStoryComment,
-  likeStoryComment,
-  unlikeStoryComment,
-  updateStoryComment,
-  deleteStoryComment,
   getStoryFeaturedComments,
-  recomputeStoryFeaturedByStoryId,
   getSimilarStories,
   getRecommendedStories,
   getStoryDetailBySlug,

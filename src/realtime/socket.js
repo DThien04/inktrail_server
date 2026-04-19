@@ -92,11 +92,6 @@ const emitNotificationToUser = (userId, payload) => {
   ioInstance.to(`user:${userId}`).emit("notification:new", payload);
 };
 
-const emitStoryComment = (storyId, payload) => {
-  if (!ioInstance || !storyId) return;
-  ioInstance.to(`story:${storyId}:comments`).emit("story-comment:new", payload);
-};
-
 const emitChapterComment = (chapterId, payload) => {
   if (!ioInstance || !chapterId) return;
   ioInstance.to(`chapter:${chapterId}:comments`).emit("chapter-comment:new", payload);
@@ -105,6 +100,5 @@ const emitChapterComment = (chapterId, payload) => {
 module.exports = {
   initializeSocket,
   emitNotificationToUser,
-  emitStoryComment,
   emitChapterComment,
 };

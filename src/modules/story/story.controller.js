@@ -124,32 +124,6 @@ const trackReadEvent = async (req, res) => {
   }
 };
 
-const likeStory = async (req, res) => {
-  try {
-    const result = await storyService.likeStory({
-      storyId: req.params.id,
-      requester: req.user,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const unlikeStory = async (req, res) => {
-  try {
-    const result = await storyService.unlikeStory({
-      storyId: req.params.id,
-      requester: req.user,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
 const getMyRating = async (req, res) => {
   try {
     const result = await storyService.getMyStoryRating({
@@ -192,112 +166,11 @@ const listRatings = async (req, res) => {
   }
 };
 
-const getComments = async (req, res) => {
-  try {
-    const result = await storyService.listStoryComments({
-      storyId: req.params.id,
-      requester: req.user || null,
-      sort: req.query.sort,
-      limit: req.query.limit,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const createComment = async (req, res) => {
-  try {
-    const comment = await storyService.createStoryComment({
-      storyId: req.params.id,
-      requester: req.user,
-      content: req.body.content,
-    });
-
-    res.status(201).json({
-      message: "Tạo bình luận thành công",
-      comment,
-    });
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const likeComment = async (req, res) => {
-  try {
-    const result = await storyService.likeStoryComment({
-      commentId: req.params.commentId,
-      requester: req.user,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const unlikeComment = async (req, res) => {
-  try {
-    const result = await storyService.unlikeStoryComment({
-      commentId: req.params.commentId,
-      requester: req.user,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const updateComment = async (req, res) => {
-  try {
-    const comment = await storyService.updateStoryComment({
-      commentId: req.params.commentId,
-      requester: req.user,
-      content: req.body.content,
-    });
-
-    res.json({
-      message: "Cap nhat binh luan thanh cong",
-      comment,
-    });
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const deleteComment = async (req, res) => {
-  try {
-    const result = await storyService.deleteStoryComment({
-      commentId: req.params.commentId,
-      requester: req.user,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
 const getFeaturedComments = async (req, res) => {
   try {
     const result = await storyService.getStoryFeaturedComments({
       storyId: req.params.id,
       requester: req.user || null,
-    });
-
-    res.json(result);
-  } catch (err) {
-    handleError(err, res);
-  }
-};
-
-const recomputeFeaturedComments = async (req, res) => {
-  try {
-    const result = await storyService.recomputeStoryFeaturedByStoryId({
-      storyId: req.params.id,
-      requester: req.user,
     });
 
     res.json(result);
@@ -397,19 +270,10 @@ module.exports = {
   searchStories,
   getPublishedStoriesByAuthor,
   trackReadEvent,
-  likeStory,
-  unlikeStory,
   listRatings,
   getMyRating,
   upsertRating,
-  getComments,
-  createComment,
-  likeComment,
-  unlikeComment,
-  updateComment,
-  deleteComment,
   getFeaturedComments,
-  recomputeFeaturedComments,
   getSimilarStories,
   getRecommendedStories,
   getBySlug,

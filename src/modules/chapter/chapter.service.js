@@ -7,6 +7,7 @@ const {
 } = require("../comment/comment-featured.service");
 
 const ALLOWED_CHAPTER_STATUSES = new Set(["draft", "published"]);
+const CHAPTER_COMMENT_NOTIFICATION_TYPE = "chapter_commented";
 
 const normalizeText = (value) => String(value ?? "").trim();
 const getRequesterDisplayName = (requester) =>
@@ -511,7 +512,7 @@ const createChapterComment = async ({ chapterId, requester, content }) => {
       actorId: requester.id,
       storyId: chapter.story.id,
       chapterId: chapter.id,
-      type: "story_commented",
+      type: CHAPTER_COMMENT_NOTIFICATION_TYPE,
       title: `${getRequesterDisplayName(requester)} da binh luan chuong ${chapter.chapterNumber} cua truyen ${chapter.story.title}`,
       body: normalizedContent,
       linkUrl: `/stories/${chapter.story.slug}/chapters/${chapter.id}`,

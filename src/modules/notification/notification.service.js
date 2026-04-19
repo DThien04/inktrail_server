@@ -3,11 +3,11 @@ const { emitNotificationToUser } = require("../../realtime/socket");
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const CHAPTER_COMMENT_NOTIFICATION_TYPE = "chapter_commented";
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   "system",
-  "story_liked",
   "chapter_liked",
-  "story_commented",
+  CHAPTER_COMMENT_NOTIFICATION_TYPE,
   "chapter_published",
   "story_published",
   "admin_message",

@@ -23,7 +23,7 @@ const getProfileStats = async (userId) => {
         _count: {
           select: {
             readingProgresses: true,
-            storyLikes: true,
+            chapterLikes: true,
             followingAuthors: true,
           },
         },
@@ -43,7 +43,7 @@ const getProfileStats = async (userId) => {
     stats: {
       storiesReadCount: distinctReadStories.length,
       followingAuthorCount: user._count?.followingAuthors ?? 0,
-      favoriteCount: user._count?.storyLikes ?? 0,
+      favoriteCount: user._count?.chapterLikes ?? 0,
     },
   };
 };

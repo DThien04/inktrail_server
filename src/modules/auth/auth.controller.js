@@ -99,4 +99,60 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { register, login, refresh, logout };
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email la bat buoc" });
+    }
+
+    const result = await authService.forgotPassword(email);
+    return res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const verifyResetOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email va OTP la bat buoc" });
+    }
+
+    const result = await authService.verifyResetOtp({ email, otp });
+    return res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, new_password: newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP va mat khau moi la bat buoc",
+      });
+    }
+
+    const result = await authService.resetPassword({
+      email,
+      otp,
+      newPassword,
+    });
+    return res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword,
+};
