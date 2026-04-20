@@ -1,7 +1,7 @@
 BEGIN;
 
 DELETE FROM "notifications"
-WHERE "type" = 'story_liked';
+WHERE "type"::text = 'story_liked';
 
 ALTER TYPE "NotificationType" RENAME TO "NotificationType_old";
 

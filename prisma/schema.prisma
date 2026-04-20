@@ -24,6 +24,9 @@ model User {
   chapterLikes          ChapterLike[]
   chapterComments       ChapterComment[]
   chapterCommentLikes   ChapterCommentLike[]
+  chapterCommentReports ChapterCommentReport[]
+  storyReports          StoryReport[]
+  chapterReports        ChapterReport[]
   readingProgresses     ReadingProgress[]
   readSessions          StoryReadSession[]
   storyRatings          StoryRating[]
@@ -100,6 +103,7 @@ model Story {
   readSessions      StoryReadSession[]
   stats             StoryStat?
   notifications     Notification[]
+  reports           StoryReport[]
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -187,6 +191,7 @@ model Chapter {
   comments        ChapterComment[]
   featuredComment ChapterFeaturedComment?
   notifications   Notification[]
+  reports         ChapterReport[]
 
   @@unique([storyId, chapterNumber])
   @@index([storyId, status])
@@ -239,6 +244,7 @@ model ChapterComment {
   user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   chapter           Chapter                 @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   likes             ChapterCommentLike[]
+  reports           ChapterCommentReport[]
   stats             ChapterCommentStat?
   featuredInChapter ChapterFeaturedComment?
 
@@ -260,6 +266,69 @@ model ChapterCommentLike {
   @@index([commentId])
   @@index([userId])
   @@map("chapter_comment_likes")
+}
+
+model ChapterCommentReport {
+  id           String                     @id @default(uuid())
+  reporterId   String                     @map("reporter_id")
+  commentId    String                     @map("comment_id")
+  reason       ChapterCommentReportReason
+  description  String?
+  status       ChapterCommentReportStatus @default(pending)
+  createdAt    DateTime                   @default(now()) @map("created_at")
+  updatedAt    DateTime                   @updatedAt @map("updated_at")
+  resolvedAt   DateTime?                  @map("resolved_at")
+
+  reporter User           @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  comment  ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, commentId])
+  @@index([commentId, createdAt])
+  @@index([status, createdAt])
+  @@index([reporterId, createdAt])
+  @@map("chapter_comment_reports")
+}
+
+model StoryReport {
+  id          String              @id @default(uuid())
+  reporterId  String              @map("reporter_id")
+  storyId     String              @map("story_id")
+  reason      ContentReportReason
+  description String?
+  status      ContentReportStatus @default(pending)
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  resolvedAt  DateTime?           @map("resolved_at")
+
+  reporter User  @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  story    Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, storyId])
+  @@index([storyId, createdAt])
+  @@index([status, createdAt])
+  @@index([reporterId, createdAt])
+  @@map("story_reports")
+}
+
+model ChapterReport {
+  id          String              @id @default(uuid())
+  reporterId  String              @map("reporter_id")
+  chapterId   String              @map("chapter_id")
+  reason      ContentReportReason
+  description String?
+  status      ContentReportStatus @default(pending)
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  resolvedAt  DateTime?           @map("resolved_at")
+
+  reporter User    @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  chapter  Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, chapterId])
+  @@index([chapterId, createdAt])
+  @@index([status, createdAt])
+  @@index([reporterId, createdAt])
+  @@map("chapter_reports")
 }
 
 model ChapterCommentStat {
@@ -392,6 +461,37 @@ enum StoryStatus {
 enum ChapterStatus {
   draft
   published
+}
+
+enum ChapterCommentReportReason {
+  spam
+  abuse
+  hate
+  sexual
+  violence
+  other
+}
+
+enum ChapterCommentReportStatus {
+  pending
+  dismissed
+  removed
+}
+
+enum ContentReportReason {
+  spam
+  copyright
+  sexual
+  violence
+  hate
+  misleading
+  other
+}
+
+enum ContentReportStatus {
+  pending
+  dismissed
+  action_taken
 }
 
 enum NotificationType {
