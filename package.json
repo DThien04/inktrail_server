@@ -7,11 +7,13 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/index.js",
-    "start": "node src/index.js",
-    "moderation:test": "node src/utils/test-moderation.js"
-  },
+  "dev": "nodemon src/index.js",
+  "start": "node src/index.js",
+  "build": "prisma generate",
+  "postinstall": "prisma generate",
+  "prisma:migrate": "prisma migrate deploy",
+  "moderation:test": "node src/utils/test-moderation.js"
+},
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
