@@ -41,7 +41,10 @@ const rankByScore = ({ comments, lookbackHours }) => {
 
 const recomputeChapterFeaturedComment = async ({ tx = prisma, chapterId }) => {
   const comments = await tx.chapterComment.findMany({
-    where: { chapterId },
+    where: {
+      chapterId,
+      isHidden: false,
+    },
     take: MAX_CHAPTER_CANDIDATES,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {

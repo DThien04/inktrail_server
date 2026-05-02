@@ -62,6 +62,18 @@ router.patch(
   chapterController.updateChapter,
 );
 router.post(
+  "/:id/publish",
+  authenticate,
+  authorize("author", "admin"),
+  chapterController.publishChapter,
+);
+router.post(
+  "/:id/unpublish",
+  authenticate,
+  authorize("author", "admin"),
+  chapterController.unpublishChapter,
+);
+router.post(
   "/:id/move",
   authenticate,
   authorize("author", "admin"),

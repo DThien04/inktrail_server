@@ -91,6 +91,7 @@ const getPublicHomeBanners = async () => {
       isActive: true,
       story: {
         status: "published",
+        isHidden: false,
       },
     },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],

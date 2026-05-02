@@ -25,15 +25,18 @@ model User {
   chapterComments       ChapterComment[]
   chapterCommentLikes   ChapterCommentLike[]
   chapterCommentReports ChapterCommentReport[]
+  moderatedComments     ChapterComment[]       @relation("CommentModeratedBy")
+  moderatedChapters     Chapter[]              @relation("ChapterModeratedBy")
+  moderatedStories      Story[]                @relation("StoryModeratedBy")
   storyReports          StoryReport[]
   chapterReports        ChapterReport[]
   readingProgresses     ReadingProgress[]
   readSessions          StoryReadSession[]
   storyRatings          StoryRating[]
-  followingAuthors      AuthorFollow[]        @relation("AuthorFollowing")
-  authorFollowers       AuthorFollow[]        @relation("AuthorFollowers")
-  notificationsReceived Notification[]       @relation("UserNotifications")
-  notificationsSent     Notification[]       @relation("NotificationActor")
+  followingAuthors      AuthorFollow[]         @relation("AuthorFollowing")
+  authorFollowers       AuthorFollow[]         @relation("AuthorFollowers")
+  notificationsReceived Notification[]         @relation("UserNotifications")
+  notificationsSent     Notification[]         @relation("NotificationActor")
 
   @@map("users")
 }
@@ -84,17 +87,27 @@ model PasswordResetOtp {
 }
 
 model Story {
-  id          String      @id @default(uuid())
-  title       String
-  slug        String      @unique
-  description String?
-  coverUrl    String?     @map("cover_url")
-  status      StoryStatus @default(draft)
-  authorId    String      @map("author_id")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  id           String      @id @default(uuid())
+  title        String
+  slug         String      @unique
+  description  String?
+  coverUrl     String?     @map("cover_url")
+  status       StoryStatus @default(draft)
+  moderationStatus     ModerationStatus @default(pending) @map("moderation_status")
+  moderationCheckedAt  DateTime?        @map("moderation_checked_at")
+  moderationCategories Json?            @map("moderation_categories")
+  moderationConfidence Float?           @map("moderation_confidence")
+  moderationReason     String?          @map("moderation_reason")
+  isHidden     Boolean     @default(false) @map("is_hidden")
+  hiddenAt     DateTime?   @map("hidden_at")
+  hiddenById   String?     @map("hidden_by_id")
+  hiddenReason String?     @map("hidden_reason")
+  authorId     String      @map("author_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
 
-  author            User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author            User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  hiddenBy          User?              @relation("StoryModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
   chapters          Chapter[]
   ratings           StoryRating[]
   homeBanner        HomeBanner?
@@ -107,6 +120,9 @@ model Story {
 
   @@index([authorId])
   @@index([status, createdAt])
+  @@index([status, isHidden, createdAt])
+  @@index([moderationStatus, updatedAt])
+  @@index([isHidden, hiddenAt])
   @@map("stories")
 }
 
@@ -181,11 +197,21 @@ model Chapter {
   title         String
   content       String
   status        ChapterStatus @default(draft)
+  moderationStatus     ModerationStatus @default(pending) @map("moderation_status")
+  moderationCheckedAt  DateTime?        @map("moderation_checked_at")
+  moderationCategories Json?            @map("moderation_categories")
+  moderationConfidence Float?           @map("moderation_confidence")
+  moderationReason     String?          @map("moderation_reason")
+  isHidden      Boolean       @default(false) @map("is_hidden")
+  hiddenAt      DateTime?     @map("hidden_at")
+  hiddenById    String?       @map("hidden_by_id")
+  hiddenReason  String?       @map("hidden_reason")
   publishedAt   DateTime?     @map("published_at")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   story           Story                   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  hiddenBy        User?                   @relation("ChapterModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
   stats           ChapterStat?
   likes           ChapterLike[]
   comments        ChapterComment[]
@@ -195,6 +221,9 @@ model Chapter {
 
   @@unique([storyId, chapterNumber])
   @@index([storyId, status])
+  @@index([storyId, moderationStatus, chapterNumber])
+  @@index([storyId, isHidden, chapterNumber])
+  @@index([isHidden, hiddenAt])
   @@map("chapters")
 }
 
@@ -233,22 +262,35 @@ model ChapterLike {
 }
 
 model ChapterComment {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  chapterId String   @map("chapter_id")
-  content   String
-  isEdited  Boolean  @default(false) @map("is_edited")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                   String                         @id @default(uuid())
+  userId               String                         @map("user_id")
+  chapterId            String                         @map("chapter_id")
+  content              String
+  isEdited             Boolean                        @default(false) @map("is_edited")
+  moderationStatus     ChapterCommentModerationStatus @default(pending) @map("moderation_status")
+  moderationCheckedAt  DateTime?                      @map("moderation_checked_at")
+  moderationCategories Json?                          @map("moderation_categories")
+  moderationConfidence Float?                         @map("moderation_confidence")
+  moderationReason     String?                        @map("moderation_reason")
+  isHidden             Boolean                        @default(false) @map("is_hidden")
+  hiddenAt             DateTime?                      @map("hidden_at")
+  hiddenById           String?                        @map("hidden_by_id")
+  hiddenReason         String?                        @map("hidden_reason")
+  createdAt            DateTime                       @default(now()) @map("created_at")
+  updatedAt            DateTime                       @updatedAt @map("updated_at")
 
   user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   chapter           Chapter                 @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  hiddenBy          User?                   @relation("CommentModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
   likes             ChapterCommentLike[]
   reports           ChapterCommentReport[]
   stats             ChapterCommentStat?
   featuredInChapter ChapterFeaturedComment?
 
   @@index([chapterId, createdAt])
+  @@index([chapterId, isHidden, createdAt])
+  @@index([chapterId, moderationStatus, createdAt])
+  @@index([isHidden, hiddenAt])
   @@index([userId, createdAt])
   @@map("chapter_comments")
 }
@@ -268,21 +310,70 @@ model ChapterCommentLike {
   @@map("chapter_comment_likes")
 }
 
-model ChapterCommentReport {
-  id           String                     @id @default(uuid())
-  reporterId   String                     @map("reporter_id")
-  commentId    String                     @map("comment_id")
-  reason       ChapterCommentReportReason
-  description  String?
-  status       ChapterCommentReportStatus @default(pending)
-  createdAt    DateTime                   @default(now()) @map("created_at")
-  updatedAt    DateTime                   @updatedAt @map("updated_at")
-  resolvedAt   DateTime?                  @map("resolved_at")
+model ReportCase {
+  id                     String                  @id @default(uuid())
+  targetType             ReportTargetType        @map("target_type")
+  targetId               String                  @map("target_id")
+  status                 ReportCaseStatus        @default(pending)
+  priority               ReportCasePriority      @default(low)
+  resolutionAction       ReportResolutionAction? @map("resolution_action")
+  lastResolutionAction   ReportResolutionAction? @map("last_resolution_action")
+  riskScore              Int                     @default(0) @map("risk_score")
+  aiFlagged              Boolean                 @default(false) @map("ai_flagged")
+  aiCategories           Json?                   @map("ai_categories")
+  aiConfidence           Float?                  @map("ai_confidence")
+  aiSeverity             String?                 @map("ai_severity")
+  aiSummary              String?                 @map("ai_summary")
+  aiSuggestedAction      String?                 @map("ai_suggested_action")
+  aiCheckedAt            DateTime?               @map("ai_checked_at")
+  appealStatus           ReportAppealStatus?     @map("appeal_status")
+  appealReason           String?                 @map("appeal_reason")
+  appealSubmittedAt      DateTime?               @map("appeal_submitted_at")
+  appealResolvedAt       DateTime?               @map("appeal_resolved_at")
+  appealResolvedById     String?                 @map("appeal_resolved_by_id")
+  appealAiSummary        String?                 @map("appeal_ai_summary")
+  appealAiRecommendation String?                 @map("appeal_ai_recommendation")
+  appealAiConfidence     Float?                  @map("appeal_ai_confidence")
+  appealAiCheckedAt      DateTime?               @map("appeal_ai_checked_at")
+  reportCount            Int                     @default(0) @map("report_count")
+  uniqueReporterCount    Int                     @default(0) @map("unique_reporter_count")
+  reopenedCount          Int                     @default(0) @map("reopened_count")
+  lastReportedAt         DateTime                @default(now()) @map("last_reported_at")
+  resolvedAt             DateTime?               @map("resolved_at")
+  restoredAt             DateTime?               @map("restored_at")
+  restoredById           String?                 @map("restored_by_id")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
 
-  reporter User           @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  comment  ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  storyReports          StoryReport[]
+  chapterReports        ChapterReport[]
+  chapterCommentReports ChapterCommentReport[]
+
+  @@unique([targetType, targetId])
+  @@index([status, lastReportedAt])
+  @@index([targetType, status, updatedAt])
+  @@index([priority, status, lastReportedAt])
+  @@map("report_cases")
+}
+
+model ChapterCommentReport {
+  id          String                     @id @default(uuid())
+  caseId      String                     @map("case_id")
+  reporterId  String                     @map("reporter_id")
+  commentId   String                     @map("comment_id")
+  reason      ChapterCommentReportReason
+  description String?
+  status      ChapterCommentReportStatus @default(pending)
+  createdAt   DateTime                   @default(now()) @map("created_at")
+  updatedAt   DateTime                   @updatedAt @map("updated_at")
+  resolvedAt  DateTime?                  @map("resolved_at")
+
+  reportCase ReportCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reporter   User           @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  comment    ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   @@unique([reporterId, commentId])
+  @@index([caseId, createdAt])
   @@index([commentId, createdAt])
   @@index([status, createdAt])
   @@index([reporterId, createdAt])
@@ -291,6 +382,7 @@ model ChapterCommentReport {
 
 model StoryReport {
   id          String              @id @default(uuid())
+  caseId      String              @map("case_id")
   reporterId  String              @map("reporter_id")
   storyId     String              @map("story_id")
   reason      ContentReportReason
@@ -300,10 +392,12 @@ model StoryReport {
   updatedAt   DateTime            @updatedAt @map("updated_at")
   resolvedAt  DateTime?           @map("resolved_at")
 
-  reporter User  @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  story    Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  reportCase ReportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reporter   User       @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  story      Story      @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@unique([reporterId, storyId])
+  @@index([caseId, createdAt])
   @@index([storyId, createdAt])
   @@index([status, createdAt])
   @@index([reporterId, createdAt])
@@ -312,6 +406,7 @@ model StoryReport {
 
 model ChapterReport {
   id          String              @id @default(uuid())
+  caseId      String              @map("case_id")
   reporterId  String              @map("reporter_id")
   chapterId   String              @map("chapter_id")
   reason      ContentReportReason
@@ -321,10 +416,12 @@ model ChapterReport {
   updatedAt   DateTime            @updatedAt @map("updated_at")
   resolvedAt  DateTime?           @map("resolved_at")
 
-  reporter User    @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  chapter  Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  reportCase ReportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reporter   User       @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  chapter    Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   @@unique([reporterId, chapterId])
+  @@index([caseId, createdAt])
   @@index([chapterId, createdAt])
   @@index([status, createdAt])
   @@index([reporterId, createdAt])
@@ -455,7 +552,6 @@ enum Role {
 enum StoryStatus {
   draft
   published
-  archived
 }
 
 enum ChapterStatus {
@@ -470,6 +566,19 @@ enum ChapterCommentReportReason {
   sexual
   violence
   other
+}
+
+enum ChapterCommentModerationStatus {
+  pending
+  approved
+  rejected
+}
+
+enum ModerationStatus {
+  pending
+  approved
+  rejected
+  failed
 }
 
 enum ChapterCommentReportStatus {
@@ -492,6 +601,37 @@ enum ContentReportStatus {
   pending
   dismissed
   action_taken
+}
+
+enum ReportTargetType {
+  story
+  chapter
+  chapter_comment
+}
+
+enum ReportCaseStatus {
+  pending
+  resolved
+}
+
+enum ReportAppealStatus {
+  pending
+  accepted
+  rejected
+}
+
+enum ReportCasePriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum ReportResolutionAction {
+  ignored
+  story_hidden
+  chapter_hidden
+  comment_removed
 }
 
 enum NotificationType {

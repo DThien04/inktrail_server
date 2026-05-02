@@ -112,7 +112,7 @@ const formatStorySummary = (story, ratingStatsByStoryId = new Map()) => {
 
 const getNewStories = async ({ limit }) => {
   const stories = await prisma.story.findMany({
-    where: { status: "published" },
+    where: { status: "published", isHidden: false },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     take: parseLimit(limit),
     include: storySummaryInclude,
@@ -127,7 +127,7 @@ const getNewStories = async ({ limit }) => {
 
 const getHotStories = async ({ limit }) => {
   const stories = await prisma.story.findMany({
-    where: { status: "published" },
+    where: { status: "published", isHidden: false },
     take: MAX_LIMIT,
     include: storySummaryInclude,
   });

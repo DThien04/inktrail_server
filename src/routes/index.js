@@ -7,6 +7,7 @@ router.use("/profile", require("../modules/profile/profile.route"));
 router.use("/notifications", require("../modules/notification/notification.route"));
 router.use("/announcements", require("../modules/announcement/announcement.route"));
 router.use("/reports", require("../modules/report/report.route"));
+router.use("/admin/dashboard", require("../modules/admin_dashboard/admin_dashboard.route"));
 router.use("/stories", require("../modules/story/story.route"));
 router.use("/chapters", require("../modules/chapter/chapter.route"));
 router.use("/genres", require("../modules/genre/genre.route"));

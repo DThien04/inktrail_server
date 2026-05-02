@@ -3,14 +3,13 @@ const chapterService = require("./chapter.service");
 
 const createChapter = async (req, res) => {
   try {
-    const { chapter_number, title, content, status } = req.body;
+    const { chapter_number, title, content } = req.body;
     const chapter = await chapterService.createChapter({
       storyId: req.params.storyId,
       requester: req.user,
       chapterNumber: chapter_number,
       title,
       content,
-      status,
     });
 
     res.status(201).json({
@@ -190,18 +189,49 @@ const recomputeFeaturedComment = async (req, res) => {
 
 const updateChapter = async (req, res) => {
   try {
-    const { chapter_number, title, content, status } = req.body;
+    const { chapter_number, title, content } = req.body;
     const chapter = await chapterService.updateChapter({
       chapterId: req.params.id,
       requester: req.user,
       chapterNumber: chapter_number,
       title,
       content,
-      status,
     });
 
     res.json({
       message: "Cập nhật chương thành công",
+      chapter,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const publishChapter = async (req, res) => {
+  try {
+    const chapter = await chapterService.publishChapter({
+      chapterId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json({
+      message: "Xuất bản chương thành công",
+      chapter,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const unpublishChapter = async (req, res) => {
+  try {
+    const chapter = await chapterService.unpublishChapter({
+      chapterId: req.params.id,
+      requester: req.user,
+    });
+
+    res.json({
+      message: "Đã thu hồi chương về bản nháp",
       chapter,
     });
   } catch (err) {
@@ -254,6 +284,8 @@ module.exports = {
   getFeaturedComment,
   recomputeFeaturedComment,
   updateChapter,
+  publishChapter,
+  unpublishChapter,
   moveChapter,
   deleteChapter,
 };

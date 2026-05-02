@@ -97,8 +97,20 @@ const emitChapterComment = (chapterId, payload) => {
   ioInstance.to(`chapter:${chapterId}:comments`).emit("chapter-comment:new", payload);
 };
 
+const emitChapterCommentRemoved = (chapterId, payload) => {
+  if (!ioInstance || !chapterId) return;
+  ioInstance
+    .to(`chapter:${chapterId}:comments`)
+    .emit("chapter-comment:removed", payload);
+  const userId = String(payload?.user_id || "").trim();
+  if (userId) {
+    ioInstance.to(`user:${userId}`).emit("chapter-comment:removed", payload);
+  }
+};
+
 module.exports = {
   initializeSocket,
   emitNotificationToUser,
   emitChapterComment,
+  emitChapterCommentRemoved,
 };

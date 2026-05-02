@@ -9,7 +9,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "moderation:test": "node src/utils/test-moderation.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

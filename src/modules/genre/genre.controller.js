@@ -3,12 +3,11 @@ const genreService = require("./genre.service");
 
 const createGenre = async (req, res) => {
   try {
-    const { name, slug, description, is_active } = req.body;
+    const { name, slug, description } = req.body;
     const genre = await genreService.createGenre({
       name,
       slug,
       description,
-      isActive: is_active,
     });
 
     res.status(201).json({
@@ -44,17 +43,48 @@ const getById = async (req, res) => {
 
 const updateGenre = async (req, res) => {
   try {
-    const { name, slug, description, is_active } = req.body;
+    const { name, slug, description } = req.body;
     const genre = await genreService.updateGenre({
       genreId: req.params.id,
       name,
       slug,
       description,
-      isActive: is_active,
     });
 
     res.json({
       message: "Cập nhật thể loại thành công",
+      genre,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const activateGenre = async (req, res) => {
+  try {
+    const genre = await genreService.setGenreActiveStatus({
+      genreId: req.params.id,
+      isActive: true,
+    });
+
+    res.json({
+      message: "ÄÃ£ báº­t thá»ƒ loáº¡i thÃ nh cÃ´ng",
+      genre,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const deactivateGenre = async (req, res) => {
+  try {
+    const genre = await genreService.setGenreActiveStatus({
+      genreId: req.params.id,
+      isActive: false,
+    });
+
+    res.json({
+      message: "ÄÃ£ táº¯t thá»ƒ loáº¡i thÃ nh cÃ´ng",
       genre,
     });
   } catch (err) {
@@ -80,5 +110,7 @@ module.exports = {
   getGenres,
   getById,
   updateGenre,
+  activateGenre,
+  deactivateGenre,
   deleteGenre,
 };

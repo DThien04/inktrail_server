@@ -46,7 +46,7 @@ const formatGenre = (genre) => ({
   updated_at: genre.updatedAt,
 });
 
-const createGenre = async ({ name, slug, description, isActive }) => {
+const createGenre = async ({ name, slug, description }) => {
   const normalizedName = normalizeText(name);
   if (!normalizedName) throw new Error("Tên thể loại không được để trống");
   if (normalizedName.length > 100) throw new Error("Tên thể loại tối đa 100 ký tự");
@@ -66,7 +66,7 @@ const createGenre = async ({ name, slug, description, isActive }) => {
       name: normalizedName,
       slug: finalSlug,
       description: normalizedDescription || null,
-      isActive: isActive === undefined ? true : Boolean(isActive),
+      isActive: true,
     },
   });
 
@@ -100,7 +100,7 @@ const getGenreById = async (genreId) => {
   return formatGenre(genre);
 };
 
-const updateGenre = async ({ genreId, name, slug, description, isActive }) => {
+const updateGenre = async ({ genreId, name, slug, description }) => {
   const genre = await prisma.genre.findUnique({ where: { id: genreId } });
   if (!genre) throw new Error("Không tìm thấy thể loại");
 
@@ -121,10 +121,6 @@ const updateGenre = async ({ genreId, name, slug, description, isActive }) => {
     data.description = normalizedDescription || null;
   }
 
-  if (isActive !== undefined) {
-    data.isActive = Boolean(isActive);
-  }
-
   if (slug !== undefined || (name !== undefined && !genre.slug)) {
     data.slug = await ensureUniqueGenreSlug({
       name: data.name || genre.name,
@@ -140,6 +136,18 @@ const updateGenre = async ({ genreId, name, slug, description, isActive }) => {
   const updatedGenre = await prisma.genre.update({
     where: { id: genre.id },
     data,
+  });
+
+  return formatGenre(updatedGenre);
+};
+
+const setGenreActiveStatus = async ({ genreId, isActive }) => {
+  const genre = await prisma.genre.findUnique({ where: { id: genreId } });
+  if (!genre) throw new Error("KhÃ´ng tÃ¬m tháº¥y thá»ƒ loáº¡i");
+
+  const updatedGenre = await prisma.genre.update({
+    where: { id: genre.id },
+    data: { isActive: Boolean(isActive) },
   });
 
   return formatGenre(updatedGenre);
@@ -172,5 +180,6 @@ module.exports = {
   getGenres,
   getGenreById,
   updateGenre,
+  setGenreActiveStatus,
   deleteGenre,
 };

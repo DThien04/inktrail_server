@@ -1,6 +1,102 @@
 const { handleError } = require("../../utils/error_handle");
 const reportService = require("./report.service");
 
+const listAdminReports = async (req, res) => {
+  try {
+    const result = await reportService.listAdminReports({
+      type: req.query.type,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getAdminReportDetail = async (req, res) => {
+  try {
+    const result = await reportService.getAdminReportDetail({
+      type: req.params.type,
+      reportId: req.params.reportId,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const updateAdminReportStatus = async (req, res) => {
+  try {
+    const result = await reportService.updateAdminReportStatus({
+      type: req.params.type,
+      reportId: req.params.reportId,
+      status: req.body.status,
+      requester: req.user,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const processCriticalAdminReportCases = async (req, res) => {
+  try {
+    const result = await reportService.processCriticalAdminReportCases({
+      requester: req.user,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const restoreAdminReportCase = async (req, res) => {
+  try {
+    const result = await reportService.restoreAdminReportCase({
+      caseId: req.params.caseId,
+      requester: req.user,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const resolveReportCaseAppeal = async (req, res) => {
+  try {
+    const result = await reportService.resolveReportCaseAppeal({
+      caseId: req.params.caseId,
+      action: req.params.action,
+      requester: req.user,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const submitReportCaseAppeal = async (req, res) => {
+  try {
+    const result = await reportService.submitReportCaseAppeal({
+      caseId: req.params.caseId,
+      requester: req.user,
+      reason: req.body.reason,
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const reportStory = async (req, res) => {
   try {
     const result = await reportService.reportStory({
@@ -47,6 +143,13 @@ const reportChapterComment = async (req, res) => {
 };
 
 module.exports = {
+  listAdminReports,
+  getAdminReportDetail,
+  updateAdminReportStatus,
+  processCriticalAdminReportCases,
+  restoreAdminReportCase,
+  resolveReportCaseAppeal,
+  submitReportCaseAppeal,
   reportStory,
   reportChapter,
   reportChapterComment,
