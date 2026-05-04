@@ -5,5 +5,6 @@ const homeController = require("./home.controller");
 
 router.get("/home/stories/new", homeController.getNewStories);
 router.get("/home/stories/hot", homeController.getHotStories);
+router.get("/home/stories/monthly-ranking", homeController.getMonthlyRankingStories);
 
 module.exports = router;

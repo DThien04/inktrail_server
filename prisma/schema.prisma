@@ -37,8 +37,36 @@ model User {
   authorFollowers       AuthorFollow[]         @relation("AuthorFollowers")
   notificationsReceived Notification[]         @relation("UserNotifications")
   notificationsSent     Notification[]         @relation("NotificationActor")
+  authorApplications    AuthorApplication[]    @relation("AuthorApplicationUser")
+  reviewedApplications  AuthorApplication[]    @relation("AuthorApplicationReviewer")
 
   @@map("users")
+}
+
+model AuthorApplication {
+  id                   String                  @id @default(uuid())
+  userId               String                  @map("user_id")
+  penName              String                  @map("pen_name")
+  bio                  String?                 @map("bio")
+  reason               String?                 @map("reason")
+  sampleLinks          Json?                   @map("sample_links")
+  status               AuthorApplicationStatus @default(pending)
+  trustScoreSnapshot   Int                     @default(0) @map("trust_score_snapshot")
+  eligibilitySnapshot  Json?                   @map("eligibility_snapshot")
+  reviewedById         String?                 @map("reviewed_by_id")
+  reviewedAt           DateTime?               @map("reviewed_at")
+  reviewNote           String?                 @map("review_note")
+  rejectCooldownUntil  DateTime?               @map("reject_cooldown_until")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  user       User  @relation("AuthorApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("AuthorApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([rejectCooldownUntil])
+  @@map("author_applications")
 }
 
 model AuthorFollow {
@@ -110,7 +138,6 @@ model Story {
   hiddenBy          User?              @relation("StoryModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
   chapters          Chapter[]
   ratings           StoryRating[]
-  homeBanner        HomeBanner?
   storyGenres       StoryGenre[]
   readingProgresses ReadingProgress[]
   readSessions      StoryReadSession[]
@@ -528,25 +555,17 @@ model StoryGenre {
   @@map("story_genres")
 }
 
-model HomeBanner {
-  id             String   @id @default(uuid())
-  storyId        String   @unique @map("story_id")
-  bannerImageUrl String?  @map("banner_image_url")
-  sortOrder      Int      @default(0) @map("sort_order")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-
-  @@index([isActive, sortOrder])
-  @@map("home_banners")
-}
-
 enum Role {
   reader
   author
   admin
+}
+
+enum AuthorApplicationStatus {
+  pending
+  approved
+  rejected
+  cancelled
 }
 
 enum StoryStatus {

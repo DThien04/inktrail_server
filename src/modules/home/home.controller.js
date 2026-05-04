@@ -8,6 +8,7 @@ const getNewStories = async (req, res) => {
   try {
     const stories = await homeService.getNewStories({
       limit: normalizeQueryValue(req.query.limit),
+      page: normalizeQueryValue(req.query.page),
     });
     res.json(stories);
   } catch (err) {
@@ -19,6 +20,18 @@ const getHotStories = async (req, res) => {
   try {
     const stories = await homeService.getHotStories({
       limit: normalizeQueryValue(req.query.limit),
+      page: normalizeQueryValue(req.query.page),
+    });
+    res.json(stories);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const getMonthlyRankingStories = async (req, res) => {
+  try {
+    const stories = await homeService.getMonthlyRankingStories({
+      limit: normalizeQueryValue(req.query.limit),
     });
     res.json(stories);
   } catch (err) {
@@ -29,4 +42,5 @@ const getHotStories = async (req, res) => {
 module.exports = {
   getNewStories,
   getHotStories,
+  getMonthlyRankingStories,
 };

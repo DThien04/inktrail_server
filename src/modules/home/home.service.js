@@ -2,6 +2,9 @@
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 20;
+const DEFAULT_PAGE = 1;
+const MAX_PAGE = 1000000;
+const VN_UTC_OFFSET_MINUTES = 7 * 60;
 
 const parseLimit = (value) => {
   if (value === undefined || value === null || value === "") return DEFAULT_LIMIT;
@@ -12,6 +15,37 @@ const parseLimit = (value) => {
   }
 
   return Math.min(parsed, MAX_LIMIT);
+};
+
+const parsePage = (value) => {
+  if (value === undefined || value === null || value === "") return DEFAULT_PAGE;
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error("page phải là số nguyên dương");
+  }
+
+  return Math.min(parsed, MAX_PAGE);
+};
+
+const getCurrentMonthRangeForOffset = (offsetMinutes = VN_UTC_OFFSET_MINUTES) => {
+  const nowUtc = new Date();
+  const shiftedNow = new Date(nowUtc.getTime() + offsetMinutes * 60 * 1000);
+  const localMonthStartShifted = new Date(
+    shiftedNow.getUTCFullYear(),
+    shiftedNow.getUTCMonth(),
+    1,
+  );
+  const nextMonthStartShifted = new Date(
+    shiftedNow.getUTCFullYear(),
+    shiftedNow.getUTCMonth() + 1,
+    1,
+  );
+
+  return {
+    from: new Date(localMonthStartShifted.getTime() - offsetMinutes * 60 * 1000),
+    to: new Date(nextMonthStartShifted.getTime() - offsetMinutes * 60 * 1000),
+  };
 };
 
 const storySummaryInclude = {
@@ -110,25 +144,44 @@ const formatStorySummary = (story, ratingStatsByStoryId = new Map()) => {
   };
 };
 
-const getNewStories = async ({ limit }) => {
+const getNewStories = async ({ limit, page }) => {
+  const take = parseLimit(limit);
+  const currentPage = parsePage(page);
+  const skip = (currentPage - 1) * take;
+
   const stories = await prisma.story.findMany({
     where: { status: "published", isHidden: false },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: parseLimit(limit),
+    skip,
+    take: take + 1,
     include: storySummaryInclude,
   });
 
+  const hasMore = stories.length > take;
+  const items = hasMore ? stories.slice(0, take) : stories;
+
   const ratingStatsByStoryId = await loadRatingStatsByStoryIds(
-    stories.map((story) => story.id),
+    items.map((story) => story.id),
   );
 
-  return stories.map((story) => formatStorySummary(story, ratingStatsByStoryId));
+  return {
+    items: items.map((story) => formatStorySummary(story, ratingStatsByStoryId)),
+    pagination: {
+      page: currentPage,
+      limit: take,
+      has_more: hasMore,
+      next_page: hasMore ? currentPage + 1 : null,
+    },
+  };
 };
 
-const getHotStories = async ({ limit }) => {
+const getHotStories = async ({ limit, page }) => {
+  const take = parseLimit(limit);
+  const currentPage = parsePage(page);
+
   const stories = await prisma.story.findMany({
     where: { status: "published", isHidden: false },
-    take: MAX_LIMIT,
+    take: MAX_LIMIT * 10,
     include: storySummaryInclude,
   });
 
@@ -167,7 +220,150 @@ const getHotStories = async ({ limit }) => {
       const bCreated = b.story.createdAt instanceof Date ? b.story.createdAt.getTime() : 0;
       return bCreated - aCreated;
     })
-    .slice(0, parseLimit(limit))
+    .slice((currentPage - 1) * take, currentPage * take + 1)
+    .map((item) => item.story);
+
+  const hasMore = ranked.length > take;
+  const items = hasMore ? ranked.slice(0, take) : ranked;
+
+  return {
+    items: items.map((story) => formatStorySummary(story, ratingStatsByStoryId)),
+    pagination: {
+      page: currentPage,
+      limit: take,
+      has_more: hasMore,
+      next_page: hasMore ? currentPage + 1 : null,
+    },
+  };
+};
+
+const getMonthlyRankingStories = async ({ limit }) => {
+  const take = parseLimit(limit);
+  const { from, to } = getCurrentMonthRangeForOffset();
+
+  const stories = await prisma.story.findMany({
+    where: { status: "published", isHidden: false },
+    take: MAX_LIMIT,
+    include: storySummaryInclude,
+  });
+
+  if (stories.length === 0) return [];
+
+  const storyIds = stories.map((story) => story.id);
+
+  const [sessionGrouped, likeGrouped, commentGrouped, ratingGrouped] =
+    await Promise.all([
+      prisma.storyReadSession.groupBy({
+        by: ["storyId"],
+        where: {
+          storyId: { in: storyIds },
+          countedAt: { gte: from, lt: to },
+        },
+        _count: { _all: true },
+      }),
+      prisma.chapterLike.groupBy({
+        by: ["chapterId"],
+        where: {
+          chapter: { storyId: { in: storyIds } },
+          createdAt: { gte: from, lt: to },
+        },
+        _count: { _all: true },
+      }),
+      prisma.chapterComment.groupBy({
+        by: ["chapterId"],
+        where: {
+          chapter: { storyId: { in: storyIds } },
+          createdAt: { gte: from, lt: to },
+          isHidden: false,
+        },
+        _count: { _all: true },
+      }),
+      prisma.storyRating.groupBy({
+        by: ["storyId"],
+        where: {
+          storyId: { in: storyIds },
+          createdAt: { gte: from, lt: to },
+        },
+        _avg: { score: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+  const chapterToStoryId = new Map();
+  const chapters = await prisma.chapter.findMany({
+    where: { storyId: { in: storyIds } },
+    select: { id: true, storyId: true },
+  });
+  for (const chapter of chapters) {
+    chapterToStoryId.set(chapter.id, chapter.storyId);
+  }
+
+  const monthlyReadByStory = new Map();
+  for (const row of sessionGrouped) {
+    monthlyReadByStory.set(row.storyId, row._count?._all ?? 0);
+  }
+
+  const monthlyLikeByStory = new Map();
+  for (const row of likeGrouped) {
+    const storyId = chapterToStoryId.get(row.chapterId);
+    if (!storyId) continue;
+    monthlyLikeByStory.set(
+      storyId,
+      (monthlyLikeByStory.get(storyId) ?? 0) + (row._count?._all ?? 0),
+    );
+  }
+
+  const monthlyCommentByStory = new Map();
+  for (const row of commentGrouped) {
+    const storyId = chapterToStoryId.get(row.chapterId);
+    if (!storyId) continue;
+    monthlyCommentByStory.set(
+      storyId,
+      (monthlyCommentByStory.get(storyId) ?? 0) + (row._count?._all ?? 0),
+    );
+  }
+
+  const monthlyRatingByStory = new Map();
+  for (const row of ratingGrouped) {
+    monthlyRatingByStory.set(row.storyId, {
+      rating: typeof row._avg?.score === "number" ? row._avg.score : 0,
+      ratingCount: row._count?._all ?? 0,
+    });
+  }
+
+  const ratingStatsByStoryId = await loadRatingStatsByStoryIds(storyIds);
+
+  const ranked = stories
+    .map((story) => {
+      const monthlyRead = monthlyReadByStory.get(story.id) ?? 0;
+      const monthlyLike = monthlyLikeByStory.get(story.id) ?? 0;
+      const monthlyComment = monthlyCommentByStory.get(story.id) ?? 0;
+      const monthlyRating = monthlyRatingByStory.get(story.id) ?? {
+        rating: 0,
+        ratingCount: 0,
+      };
+
+      const score =
+        monthlyRead * 0.6 +
+        monthlyLike * 1.8 +
+        monthlyComment * 1.4 +
+        monthlyRating.rating * Math.log10(monthlyRating.ratingCount + 1) * 10;
+
+      return {
+        story,
+        score,
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aUpdated = a.story.updatedAt instanceof Date ? a.story.updatedAt.getTime() : 0;
+      const bUpdated = b.story.updatedAt instanceof Date ? b.story.updatedAt.getTime() : 0;
+      if (bUpdated !== aUpdated) return bUpdated - aUpdated;
+      const aCreated = a.story.createdAt instanceof Date ? a.story.createdAt.getTime() : 0;
+      const bCreated = b.story.createdAt instanceof Date ? b.story.createdAt.getTime() : 0;
+      return bCreated - aCreated;
+    })
+    .slice(0, take)
     .map((item) => item.story);
 
   return ranked.map((story) => formatStorySummary(story, ratingStatsByStoryId));
@@ -176,4 +372,5 @@ const getHotStories = async ({ limit }) => {
 module.exports = {
   getNewStories,
   getHotStories,
+  getMonthlyRankingStories,
 };
