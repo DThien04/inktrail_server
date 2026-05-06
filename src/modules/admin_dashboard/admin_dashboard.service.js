@@ -78,7 +78,6 @@ async function getAdminDashboardSummary() {
 
   const [
     totalUsers,
-    totalAuthors,
     totalStories,
     totalChapters,
     openReportCases,
@@ -91,7 +90,6 @@ async function getAdminDashboardSummary() {
     publishedChapters,
   ] = await Promise.all([
     prisma.user.count(),
-    prisma.user.count({ where: { role: "author" } }),
     prisma.story.count(),
     prisma.chapter.count(),
     prisma.reportCase.count({ where: { status: "pending" } }),
@@ -130,7 +128,7 @@ async function getAdminDashboardSummary() {
   const result = {
     totals: {
       users: totalUsers,
-      authors: totalAuthors,
+      authors: 0,
       stories: totalStories,
       chapters: totalChapters,
       open_report_cases: openReportCases,

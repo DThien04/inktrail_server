@@ -12,7 +12,6 @@ router.use("/stories", require("../modules/story/story.route"));
 router.use("/chapters", require("../modules/chapter/chapter.route"));
 router.use("/genres", require("../modules/genre/genre.route"));
 router.use("/users", require("../modules/user/user.route"));
-router.use("/author-program", require("../modules/author_application/author_application.route"));
 router.use("/", require("../modules/home/home.route"));
 // Sau thêm feature mới vào đây:
 // router.use('/stories',   require('../modules/story/story.routes'));

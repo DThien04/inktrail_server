@@ -557,7 +557,6 @@ model StoryGenre {
 
 enum Role {
   reader
-  author
   admin
 }
 

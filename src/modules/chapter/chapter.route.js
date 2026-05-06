@@ -3,7 +3,6 @@ const router = express.Router();
 
 const chapterController = require("./chapter.controller");
 const { authenticate } = require("../../middlewares/auth.middleware");
-const { authorize } = require("../../middlewares/role.middleware");
 
 const authenticateOptional = (req, _res, next) => {
   const authHeader = req.headers.authorization;
@@ -21,7 +20,6 @@ router.get(
 router.post(
   "/:id/comments/featured/recompute",
   authenticate,
-  authorize("author", "admin"),
   chapterController.recomputeFeaturedComment,
 );
 router.post("/:id/comments", authenticate, chapterController.createComment);
@@ -52,37 +50,31 @@ router.delete("/:id/like", authenticate, chapterController.unlikeChapter);
 router.post(
   "/stories/:storyId/chapters",
   authenticate,
-  authorize("author", "admin"),
   chapterController.createChapter,
 );
 router.patch(
   "/:id",
   authenticate,
-  authorize("author", "admin"),
   chapterController.updateChapter,
 );
 router.post(
   "/:id/publish",
   authenticate,
-  authorize("author", "admin"),
   chapterController.publishChapter,
 );
 router.post(
   "/:id/unpublish",
   authenticate,
-  authorize("author", "admin"),
   chapterController.unpublishChapter,
 );
 router.post(
   "/:id/move",
   authenticate,
-  authorize("author", "admin"),
   chapterController.moveChapter,
 );
 router.delete(
   "/:id",
   authenticate,
-  authorize("author", "admin"),
   chapterController.deleteChapter,
 );
 

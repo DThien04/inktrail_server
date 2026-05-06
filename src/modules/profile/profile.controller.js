@@ -22,11 +22,11 @@ const getById = async (req, res) => {
   }
 };
 
-const followAuthor = async (req, res) => {
+const followUser = async (req, res) => {
   try {
-    const result = await profileService.followAuthor({
+    const result = await profileService.followUser({
       followerId: req.user.id,
-      authorId: req.params.id,
+      targetUserId: req.params.id,
     });
     res.json(result);
   } catch (err) {
@@ -34,13 +34,37 @@ const followAuthor = async (req, res) => {
   }
 };
 
-const unfollowAuthor = async (req, res) => {
+const unfollowUser = async (req, res) => {
   try {
-    const result = await profileService.unfollowAuthor({
+    const result = await profileService.unfollowUser({
       followerId: req.user.id,
-      authorId: req.params.id,
+      targetUserId: req.params.id,
     });
     res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const listFollowedUsers = async (req, res) => {
+  try {
+    const users = await profileService.listFollowedUsers({
+      userId: req.user.id,
+      limit: req.query.limit,
+    });
+    res.json(users);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const listFollowers = async (req, res) => {
+  try {
+    const users = await profileService.listFollowers({
+      userId: req.user.id,
+      limit: req.query.limit,
+    });
+    res.json(users);
   } catch (err) {
     handleError(err, res);
   }
@@ -48,7 +72,7 @@ const unfollowAuthor = async (req, res) => {
 
 const listFollowedAuthors = async (req, res) => {
   try {
-    const authors = await profileService.listFollowedAuthors({
+    const authors = await profileService.listFollowedUsers({
       userId: req.user.id,
       limit: req.query.limit,
     });
@@ -195,8 +219,10 @@ const upsertMyReadingProgress = async (req, res) => {
 module.exports = {
   getMe,
   getById,
-  followAuthor,
-  unfollowAuthor,
+  followUser,
+  unfollowUser,
+  listFollowedUsers,
+  listFollowers,
   listFollowedAuthors,
   updateMe,
   changeMyPassword,

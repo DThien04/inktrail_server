@@ -8,6 +8,8 @@ const {
 const { upload } = require("../../middlewares/upload.middleware");
 
 router.get("/me", authenticate, profileController.getMe);
+router.get("/me/followers", authenticate, profileController.listFollowers);
+router.get("/me/following-users", authenticate, profileController.listFollowedUsers);
 router.get("/me/following-authors", authenticate, profileController.listFollowedAuthors);
 router.patch("/me", authenticate, upload.single("avatar_file"), profileController.updateMe);
 router.patch("/me/password", authenticate, profileController.changeMyPassword);
@@ -25,7 +27,7 @@ router.put(
   profileController.upsertMyReadingProgress,
 );
 router.get("/:id", authenticateOptional, profileController.getById);
-router.post("/:id/follow", authenticate, profileController.followAuthor);
-router.delete("/:id/follow", authenticate, profileController.unfollowAuthor);
+router.post("/:id/follow", authenticate, profileController.followUser);
+router.delete("/:id/follow", authenticate, profileController.unfollowUser);
 
 module.exports = router;

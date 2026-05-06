@@ -800,10 +800,6 @@ const getPublishedStoriesByAuthor = async ({ authorId, requester, limit }) => {
   });
 
   if (!user) throw new Error("Khong tim thay tac gia");
-  if (user.role !== "author" && user.role !== "admin") {
-    throw new Error("Nguoi dung nay khong co ho so tac gia cong khai");
-  }
-
   const stories = await prisma.story.findMany({
     where: {
       authorId: normalizedAuthorId,

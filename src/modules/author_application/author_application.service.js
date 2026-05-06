@@ -233,7 +233,7 @@ async function submitApplication({ userId, penName, bio, reason, sampleLinks }) 
     });
     if (!user) throw new Error("Khong tim thay nguoi dung");
     if (user.role !== "reader") {
-      throw new Error("Chi tai khoan reader moi duoc nop don len author");
+      throw new Error("Chi tai khoan reader moi duoc nop don");
     }
 
     const activePending = await tx.authorApplication.findFirst({
@@ -289,7 +289,7 @@ async function submitApplication({ userId, penName, bio, reason, sampleLinks }) 
         chapterId: null,
         type: "admin_message",
         title: "Co don dang ky tac gia moi",
-        body: `${created.penName} vua nop don Reader -> Author, can ban xet duyet.`,
+        body: `${created.penName} vua nop don, can ban xet duyet.`,
         linkUrl: "/admin/author-applications",
         meta: {
           author_application_id: created.id,
@@ -412,13 +412,6 @@ async function approveApplication({ applicationId, adminId, reviewNote }) {
     if (item.status !== "pending") throw new Error("Chá»‰ cÃ³ thá»ƒ duyá»‡t Ä‘Æ¡n Ä‘ang chá»");
     if (!item.user) throw new Error("KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i ná»™p Ä‘Æ¡n");
 
-    if (item.user.role !== "author") {
-      await tx.user.update({
-        where: { id: item.user.id },
-        data: { role: "author" },
-      });
-    }
-
     const updated = await tx.authorApplication.update({
       where: { id: item.id },
       data: {
@@ -440,7 +433,7 @@ async function approveApplication({ applicationId, adminId, reviewNote }) {
     chapterId: null,
     type: "admin_message",
     title: "ÄÆ¡n Ä‘Äƒng kÃ½ tÃ¡c giáº£ Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t",
-    body: "Báº¡n Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t trá»Ÿ thÃ nh tÃ¡c giáº£. HÃ£y báº¯t Ä‘áº§u táº¡o truyá»‡n/chÆ°Æ¡ng Ä‘áº§u tiÃªn.",
+    body: "Don cua ban da duoc duyet. Ban co the bat dau tao truyen/chuong dau tien.",
     linkUrl: "/dashboard",
     meta: {
       author_application_id: result.id,

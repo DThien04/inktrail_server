@@ -1654,7 +1654,7 @@ const publishChapter = async ({ chapterId, requester }) => {
     data,
   });
 
-  if (requester?.role === "author" && chapter.status !== "published") {
+  if (requester?.role !== "admin" && chapter.status !== "published") {
     scheduleChapterModeration(updatedChapter.id, chapter.story.authorId);
   }
 

@@ -2,7 +2,7 @@ const prisma = require("../../config/prisma");
 
 const normalizeText = (value) => String(value ?? "").trim();
 
-const ALLOWED_ROLES = new Set(["admin", "author", "reader"]);
+const ALLOWED_ROLES = new Set(["admin", "reader"]);
 
 const formatUser = (user) => ({
   id: user.id,
