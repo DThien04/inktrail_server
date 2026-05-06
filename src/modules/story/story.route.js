@@ -60,6 +60,11 @@ router.patch(
   upload.single("cover_file"),
   storyController.updateStory,
 );
+router.patch(
+  "/:id/status",
+  authenticate,
+  storyController.updateStoryStatus,
+);
 router.delete(
   "/:id",
   authenticate,

@@ -248,6 +248,23 @@ const updateStory = async (req, res) => {
   }
 };
 
+const updateStoryStatus = async (req, res) => {
+  try {
+    const story = await storyService.updateStoryStatus({
+      storyId: req.params.id,
+      requester: req.user,
+      status: req.body.status,
+    });
+
+    res.json({
+      message: "Cập nhật trạng thái truyện thành công",
+      story,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const deleteStory = async (req, res) => {
   try {
     const result = await storyService.deleteStory({
@@ -278,5 +295,6 @@ module.exports = {
   getRecommendedStories,
   getBySlug,
   updateStory,
+  updateStoryStatus,
   deleteStory,
 };

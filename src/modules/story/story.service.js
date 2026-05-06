@@ -118,6 +118,7 @@ const formatStory = (story) => ({
   cover_url: story.coverUrl,
   read_count: typeof story.stats?.readCount === "number" ? story.stats.readCount : 0,
   like_count: typeof story.stats?.likeCount === "number" ? story.stats.likeCount : 0,
+  chapter_count: typeof story._count?.chapters === "number" ? story._count.chapters : 0,
   status: story.status,
   moderation_status: story.moderationStatus ?? "pending",
   moderation_checked_at: story.moderationCheckedAt ?? null,
@@ -603,6 +604,9 @@ const getMyStories = async ({ userId, status }) => {
     include: {
       stats: {
         select: { readCount: true, likeCount: true },
+      },
+      _count: {
+        select: { chapters: true },
       },
       storyGenres: {
         include: {
@@ -1915,6 +1919,18 @@ const updateStory = async ({
   if (!story) throw new Error("Không tìm thấy truyện");
 
   ensureStoryOwnerOrAdmin({ story, requester });
+  const isPendingModeration = story.moderationStatus === "pending";
+  const isEditingContent =
+    title !== undefined ||
+    description !== undefined ||
+    coverUrl !== undefined ||
+    coverBase64 !== undefined ||
+    coverBuffer !== undefined ||
+    slug !== undefined ||
+    genreIds !== undefined;
+  if (isPendingModeration && isEditingContent) {
+    throw new Error("Truyện đang chờ duyệt, chưa thể chỉnh sửa lúc này");
+  }
 
   const data = {};
   const parsedGenreIds = parseGenreIdsInput(genreIds);
@@ -2032,11 +2048,22 @@ const updateStory = async ({
   return formatStory(updatedStory);
 };
 
+const updateStoryStatus = async ({ storyId, requester, status }) => {
+  return updateStory({
+    storyId,
+    requester,
+    status,
+  });
+};
+
 const deleteStory = async ({ storyId, requester }) => {
   const story = await prisma.story.findUnique({ where: { id: storyId } });
   if (!story) throw new Error("Không tìm thấy truyện");
 
   ensureStoryOwnerOrAdmin({ story, requester });
+  if (story.moderationStatus === "pending") {
+    throw new Error("Truyện đang chờ duyệt, chưa thể xóa lúc này");
+  }
 
   await prisma.story.delete({ where: { id: story.id } });
   if (story.coverUrl) {
@@ -2066,6 +2093,7 @@ module.exports = {
   getRecommendedStories,
   getStoryDetailBySlug,
   updateStory,
+  updateStoryStatus,
   deleteStory,
 };
 
