@@ -1,11 +1,20 @@
 ﻿const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
+const { moderateText } = require("../../utils/moderation");
 const {
   uploadStoryCoverAndGetUrl,
   deleteFileByPublicUrl,
 } = require("../upload/upload.service");
 
 const ALLOWED_STORY_STATUSES = new Set(["draft", "published"]);
+const STORY_BACKGROUND_MODERATION_TIMEOUT_MS = 18000;
+const STORY_BLOCKED_CATEGORIES = new Set([
+  "harassment",
+  "hate",
+  "sexual",
+  "violence",
+  "self_harm",
+]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const getRequesterDisplayName = (requester) =>
@@ -128,6 +137,182 @@ const formatStory = (story) => ({
       }))
     : [],
 });
+
+const shouldBlockModeratedStory = (moderationResult) => {
+  if (!moderationResult?.flagged) return false;
+
+  const categories = Array.isArray(moderationResult.categories)
+    ? moderationResult.categories
+    : [];
+  const hasBlockedCategory = categories.some((category) =>
+    STORY_BLOCKED_CATEGORIES.has(category),
+  );
+
+  return Boolean(
+    hasBlockedCategory ||
+      moderationResult.severity === "high" ||
+      moderationResult.severity === "critical" ||
+      moderationResult.maxScore >= 0.75,
+  );
+};
+
+const buildStoryModerationInput = (story) =>
+  [normalizeText(story?.title), normalizeText(story?.description)]
+    .filter(Boolean)
+    .join("\n\n");
+
+const notifyAdminsAboutStoryAiFlag = async ({ story, moderationResult }) => {
+  const admins = await prisma.user.findMany({
+    where: { role: "admin" },
+    select: { id: true },
+  });
+  if (!admins.length) return;
+
+  await Promise.all(
+    admins.map((admin) =>
+      notificationService.createNotification({
+        recipientId: admin.id,
+        actorId: null,
+        storyId: story.id,
+        chapterId: null,
+        type: "admin_message",
+        title: "AI gắn cờ truyện của người dùng",
+        body: `Truyện ${story.title} bị AI gắn cờ và đã tự ẩn.`,
+        linkUrl: story.slug ? `/stories/${story.slug}` : null,
+        meta: {
+          target_type: "story",
+          moderation_status: "rejected",
+          story_id: story.id,
+          story_title: story.title,
+          categories: moderationResult.categories,
+          confidence: moderationResult.maxScore,
+          ai_reason: moderationResult.reason || null,
+        },
+      }),
+    ),
+  );
+};
+
+const processStoryModeration = async ({ storyId, authorId, attempt = 1 }) => {
+  try {
+    const story = await prisma.story.findUnique({
+      where: { id: storyId },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        authorId: true,
+        status: true,
+      },
+    });
+
+    if (!story || story.authorId !== authorId || story.status !== "published") return;
+
+    const moderationInput = buildStoryModerationInput(story);
+    const moderationResult = await moderateText(moderationInput, {
+      timeoutMs: STORY_BACKGROUND_MODERATION_TIMEOUT_MS,
+    });
+    const blocked = shouldBlockModeratedStory(moderationResult);
+
+    if (!blocked) {
+      await prisma.story.updateMany({
+        where: { id: story.id, status: "published" },
+        data: {
+          moderationStatus: "approved",
+          moderationCheckedAt: new Date(),
+          moderationCategories: moderationResult.categories,
+          moderationConfidence: moderationResult.maxScore,
+          moderationReason: moderationResult.reason || null,
+        },
+      });
+      return;
+    }
+
+    const updated = await prisma.story.updateMany({
+      where: { id: story.id, status: "published" },
+      data: {
+        moderationStatus: "rejected",
+        moderationCheckedAt: new Date(),
+        moderationCategories: moderationResult.categories,
+        moderationConfidence: moderationResult.maxScore,
+        moderationReason:
+          moderationResult.reason ||
+          "Nội dung truyện không vượt qua bước kiểm duyệt tự động.",
+        status: "draft",
+        isHidden: true,
+        hiddenAt: new Date(),
+        hiddenById: null,
+        hiddenReason:
+          moderationResult.reason ||
+          "Nội dung truyện không vượt qua bước kiểm duyệt tự động.",
+      },
+    });
+    if (updated.count < 1) return;
+
+    await notificationService.createNotification({
+      recipientId: authorId,
+      actorId: null,
+      storyId: story.id,
+      chapterId: null,
+      type: "admin_message",
+      title: "Truyện đã bị AI tạm ẩn để rà soát",
+      body:
+        "Nội dung truyện có dấu hiệu vi phạm tiêu chuẩn cộng đồng. Bạn có thể chỉnh sửa nội dung và đăng lại.",
+      linkUrl: story.slug ? `/stories/${story.slug}` : null,
+      meta: {
+        target_type: "story",
+        moderation_status: "rejected",
+        story_id: story.id,
+        story_title: story.title,
+        categories: moderationResult.categories,
+        confidence: moderationResult.maxScore,
+        ai_reason: moderationResult.reason || null,
+      },
+    });
+
+    await notifyAdminsAboutStoryAiFlag({
+      story,
+      moderationResult,
+    });
+  } catch (error) {
+    console.error(
+      "[story-async-moderation:error]",
+      JSON.stringify({
+        story_id: storyId,
+        attempt,
+        message: error?.message || String(error),
+      }),
+    );
+
+    if (attempt < 2) {
+      scheduleStoryModeration(storyId, authorId, {
+        attempt: attempt + 1,
+        delayMs: 5000,
+      });
+      return;
+    }
+
+    await prisma.story.updateMany({
+      where: { id: storyId },
+      data: {
+        moderationStatus: "failed",
+        moderationCheckedAt: new Date(),
+        moderationReason: error?.message || "AI moderation failed",
+      },
+    });
+  }
+};
+
+const scheduleStoryModeration = (
+  storyId,
+  authorId,
+  { attempt = 1, delayMs = 0 } = {},
+) => {
+  setTimeout(() => {
+    void processStoryModeration({ storyId, authorId, attempt });
+  }, delayMs);
+};
 
 const formatStoryCard = (story, requester) => ({
   ...formatStory(story),
@@ -368,7 +553,7 @@ const createStory = async ({
       description: normalizedDescription || null,
       coverUrl: finalCoverUrl,
       status: normalizedStatus,
-      moderationStatus: normalizedStatus === "published" ? "pending" : "pending",
+      moderationStatus: normalizedStatus === "published" ? "pending" : "approved",
       moderationCheckedAt: null,
       moderationCategories: null,
       moderationConfidence: null,
@@ -393,6 +578,10 @@ const createStory = async ({
       },
     },
   });
+
+  if (normalizedStatus === "published") {
+    scheduleStoryModeration(story.id, authorId);
+  }
 
   return formatStory(story);
 };
@@ -1769,6 +1958,18 @@ const updateStory = async ({
       data.moderationCategories = null;
       data.moderationConfidence = null;
       data.moderationReason = null;
+      if (story.hiddenById === null) {
+        data.isHidden = false;
+        data.hiddenAt = null;
+        data.hiddenById = null;
+        data.hiddenReason = null;
+      }
+    } else if (normalizedStatus === "draft" && story.status !== "draft") {
+      data.moderationStatus = "approved";
+      data.moderationCheckedAt = null;
+      data.moderationCategories = null;
+      data.moderationConfidence = null;
+      data.moderationReason = null;
     }
   }
 
@@ -1822,6 +2023,10 @@ const updateStory = async ({
     } catch (err) {
       console.error("Cleanup old story cover failed:", err.message);
     }
+  }
+
+  if (data.status === "published" && story.status !== "published") {
+    scheduleStoryModeration(updatedStory.id, updatedStory.authorId);
   }
 
   return formatStory(updatedStory);
