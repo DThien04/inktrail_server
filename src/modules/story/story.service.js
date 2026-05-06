@@ -8,6 +8,7 @@ const {
 
 const ALLOWED_STORY_STATUSES = new Set(["draft", "published"]);
 const STORY_BACKGROUND_MODERATION_TIMEOUT_MS = 18000;
+const REPUBLISH_COOLDOWN_MS = 5 * 60 * 1000;
 const STORY_BLOCKED_CATEGORIES = new Set([
   "harassment",
   "hate",
@@ -1928,6 +1929,9 @@ const updateStory = async ({
     coverBuffer !== undefined ||
     slug !== undefined ||
     genreIds !== undefined;
+  if (story.status === "published" && isEditingContent) {
+    throw new Error("Truyện đã xuất bản, hãy đưa về bản nháp trước khi chỉnh sửa");
+  }
   if (isPendingModeration && isEditingContent) {
     throw new Error("Truyện đang chờ duyệt, chưa thể chỉnh sửa lúc này");
   }
@@ -1967,6 +1971,39 @@ const updateStory = async ({
     if (!ALLOWED_STORY_STATUSES.has(normalizedStatus)) {
       throw new Error("Trạng thái truyện không hợp lệ");
     }
+    const wasRejected =
+      story.moderationStatus === "rejected" || story.moderationStatus === "failed";
+    const hasRevisionAfterModeration =
+      story.moderationCheckedAt instanceof Date &&
+      story.updatedAt instanceof Date &&
+      story.updatedAt.getTime() > story.moderationCheckedAt.getTime();
+    if (
+      normalizedStatus === "published" &&
+      story.status !== "published" &&
+      wasRejected &&
+      !hasRevisionAfterModeration
+    ) {
+      throw new Error(
+        "Truyện đang bị từ chối. Hãy chỉnh sửa nội dung trước khi xuất bản lại",
+      );
+    }
+    if (
+      normalizedStatus === "published" &&
+      story.status !== "published" &&
+      wasRejected &&
+      hasRevisionAfterModeration
+    ) {
+      const elapsedMs = Date.now() - story.updatedAt.getTime();
+      if (elapsedMs < REPUBLISH_COOLDOWN_MS) {
+        const waitMinutes = Math.max(
+          1,
+          Math.ceil((REPUBLISH_COOLDOWN_MS - elapsedMs) / 60000),
+        );
+        throw new Error(
+          `Vui lòng chờ ${waitMinutes} phút sau khi chỉnh sửa trước khi xuất bản lại truyện`,
+        );
+      }
+    }
     data.status = normalizedStatus;
     if (normalizedStatus === "published" && story.status !== "published") {
       data.moderationStatus = "pending";
@@ -1995,6 +2032,18 @@ const updateStory = async ({
       customSlug: slug,
       excludeStoryId: story.id,
     });
+  }
+
+  if (
+    isEditingContent &&
+    story.status === "draft" &&
+    (story.moderationStatus === "rejected" || story.moderationStatus === "failed")
+  ) {
+    data.moderationStatus = "approved";
+    data.moderationCheckedAt = null;
+    data.moderationCategories = null;
+    data.moderationConfidence = null;
+    data.moderationReason = null;
   }
 
   if (!Object.keys(data).length) {

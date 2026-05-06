@@ -67,11 +67,6 @@ router.post(
   authenticate,
   chapterController.unpublishChapter,
 );
-router.post(
-  "/:id/move",
-  authenticate,
-  chapterController.moveChapter,
-);
 router.delete(
   "/:id",
   authenticate,

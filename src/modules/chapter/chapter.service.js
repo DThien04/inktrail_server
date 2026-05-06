@@ -21,6 +21,8 @@ const BLOCKED_COMMENT_CATEGORIES = new Set([
 ]);
 const COMMENT_BACKGROUND_MODERATION_TIMEOUT_MS = 15000;
 const CHAPTER_BACKGROUND_MODERATION_TIMEOUT_MS = 18000;
+const REPUBLISH_COOLDOWN_MS = 5 * 60 * 1000;
+const MIN_CHAPTER_WORD_COUNT = 500;
 const CHAPTER_BLOCKED_CATEGORIES = new Set([
   "harassment",
   "hate",
@@ -35,6 +37,17 @@ const COMMENT_MODERATION_STATUS = {
 };
 
 const normalizeText = (value) => String(value ?? "").trim();
+const countWords = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return 0;
+  return normalized.split(/\s+/).filter(Boolean).length;
+};
+const ensureChapterContentMinWords = (content) => {
+  const words = countWords(content);
+  if (words < MIN_CHAPTER_WORD_COUNT) {
+    throw new Error(`Nội dung chương phải có ít nhất ${MIN_CHAPTER_WORD_COUNT} từ`);
+  }
+};
 const getRequesterDisplayName = (requester) =>
   normalizeText(
     requester?.displayName ||
@@ -71,26 +84,10 @@ const ensureCanManageStory = ({ story, requester }) => {
   }
 };
 
-const parseChapterNumber = (value) => {
-  const num = Number(value);
-  if (!Number.isInteger(num) || num <= 0) {
-    throw new Error("chapter_number pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng");
-  }
-  return num;
-};
-
 const normalizeStatus = (value, fallback = "draft") => {
   const normalized = normalizeText(value) || fallback;
   if (!ALLOWED_CHAPTER_STATUSES.has(normalized)) {
     throw new Error("Tráº¡ng thÃ¡i chÆ°Æ¡ng khÃ´ng há»£p lá»‡");
-  }
-  return normalized;
-};
-
-const normalizeMoveDirection = (value) => {
-  const normalized = normalizeText(value).toLowerCase();
-  if (normalized !== "up" && normalized !== "down") {
-    throw new Error("direction pháº£i lÃ  up hoáº·c down");
   }
   return normalized;
 };
@@ -670,7 +667,7 @@ const scheduleCommentModeration = (
 const createChapter = async ({
   storyId,
   requester,
-  chapterNumber,
+  chapterNumber: _chapterNumber,
   title,
   content,
 }) => {
@@ -688,18 +685,13 @@ const createChapter = async ({
 
   const normalizedContent = normalizeText(content);
   if (!normalizedContent) throw new Error("Ná»™i dung chÆ°Æ¡ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+  ensureChapterContentMinWords(normalizedContent);
 
-  const normalizedChapterNumber = parseChapterNumber(chapterNumber);
-  const existed = await prisma.chapter.findUnique({
-    where: {
-      storyId_chapterNumber: {
-        storyId,
-        chapterNumber: normalizedChapterNumber,
-      },
-    },
-    select: { id: true },
+  const maxChapterNumber = await prisma.chapter.aggregate({
+    where: { storyId },
+    _max: { chapterNumber: true },
   });
-  if (existed) throw new Error("Sá»‘ chÆ°Æ¡ng Ä‘Ã£ tá»“n táº¡i trong truyá»‡n nÃ y");
+  const normalizedChapterNumber = (maxChapterNumber._max.chapterNumber || 0) + 1;
 
   const chapter = await prisma.chapter.create({
     data: {
@@ -1559,7 +1551,7 @@ const unlikeChapter = async ({ chapterId, requester }) => {
 const updateChapter = async ({
   chapterId,
   requester,
-  chapterNumber,
+  chapterNumber: _chapterNumber,
   title,
   content,
 }) => {
@@ -1570,8 +1562,12 @@ const updateChapter = async ({
   if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
 
   ensureCanManageStory({ story: chapter.story, requester });
+  if (chapter.status === "published") {
+    throw new Error("Chương đã xuất bản, hãy đưa về bản nháp trước khi chỉnh sửa");
+  }
 
   const data = {};
+  const isEditingContent = title !== undefined || content !== undefined;
 
   if (title !== undefined) {
     const normalizedTitle = normalizeText(title);
@@ -1585,29 +1581,23 @@ const updateChapter = async ({
   if (content !== undefined) {
     const normalizedContent = normalizeText(content);
     if (!normalizedContent) throw new Error("Ná»™i dung chÆ°Æ¡ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+    ensureChapterContentMinWords(normalizedContent);
     data.content = normalizedContent;
-  }
-
-  if (chapterNumber !== undefined) {
-    const normalizedChapterNumber = parseChapterNumber(chapterNumber);
-    const existed = await prisma.chapter.findUnique({
-      where: {
-        storyId_chapterNumber: {
-          storyId: chapter.storyId,
-          chapterNumber: normalizedChapterNumber,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (existed && existed.id !== chapter.id) {
-      throw new Error("Sá»‘ chÆ°Æ¡ng Ä‘Ã£ tá»“n táº¡i trong truyá»‡n nÃ y");
-    }
-    data.chapterNumber = normalizedChapterNumber;
   }
 
   if (!Object.keys(data).length) {
     throw new Error("KhÃ´ng cÃ³ dá»¯ liá»‡u há»£p lá»‡ Ä‘á»ƒ cáº­p nháº­t");
+  }
+
+  if (
+    isEditingContent &&
+    (chapter.moderationStatus === "rejected" || chapter.moderationStatus === "failed")
+  ) {
+    data.moderationStatus = "approved";
+    data.moderationCheckedAt = null;
+    data.moderationCategories = null;
+    data.moderationConfidence = null;
+    data.moderationReason = null;
   }
 
   const updatedChapter = await prisma.chapter.update({
@@ -1626,6 +1616,29 @@ const publishChapter = async ({ chapterId, requester }) => {
   if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
 
   ensureCanManageStory({ story: chapter.story, requester });
+  const wasRejected =
+    chapter.moderationStatus === "rejected" || chapter.moderationStatus === "failed";
+  const hasRevisionAfterModeration =
+    chapter.moderationCheckedAt instanceof Date &&
+    chapter.updatedAt instanceof Date &&
+    chapter.updatedAt.getTime() > chapter.moderationCheckedAt.getTime();
+  if (wasRejected && !hasRevisionAfterModeration) {
+    throw new Error(
+      "Chương đang bị từ chối. Hãy chỉnh sửa nội dung trước khi xuất bản lại",
+    );
+  }
+  if (wasRejected && hasRevisionAfterModeration) {
+    const elapsedMs = Date.now() - chapter.updatedAt.getTime();
+    if (elapsedMs < REPUBLISH_COOLDOWN_MS) {
+      const waitMinutes = Math.max(
+        1,
+        Math.ceil((REPUBLISH_COOLDOWN_MS - elapsedMs) / 60000),
+      );
+      throw new Error(
+        `Vui lòng chờ ${waitMinutes} phút sau khi chỉnh sửa trước khi xuất bản lại chương`,
+      );
+    }
+  }
 
   const data = {};
   if (chapter.status !== "published") {
@@ -1685,62 +1698,6 @@ const unpublishChapter = async ({ chapterId, requester }) => {
   return formatChapter(updatedChapter);
 };
 
-const moveChapter = async ({ chapterId, requester, direction }) => {
-  const normalizedDirection = normalizeMoveDirection(direction);
-
-  const chapter = await prisma.chapter.findUnique({
-    where: { id: chapterId },
-    include: { story: { select: { id: true, authorId: true } } },
-  });
-  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
-
-  ensureCanManageStory({ story: chapter.story, requester });
-
-  const neighbor = await prisma.chapter.findFirst({
-    where: {
-      storyId: chapter.storyId,
-      chapterNumber:
-        normalizedDirection === "up"
-          ? { lt: chapter.chapterNumber }
-          : { gt: chapter.chapterNumber },
-    },
-    orderBy: {
-      chapterNumber: normalizedDirection === "up" ? "desc" : "asc",
-    },
-  });
-
-  if (!neighbor) {
-    throw new Error(
-      normalizedDirection === "up"
-        ? "ChÆ°Æ¡ng nÃ y Ä‘Ã£ á»Ÿ Ä‘áº§u danh sÃ¡ch"
-        : "ChÆ°Æ¡ng nÃ y Ä‘Ã£ á»Ÿ cuá»‘i danh sÃ¡ch",
-    );
-  }
-
-  const maxChapterNumber = await prisma.chapter.aggregate({
-    where: { storyId: chapter.storyId },
-    _max: { chapterNumber: true },
-  });
-  const tempChapterNumber = (maxChapterNumber._max.chapterNumber || 0) + 1000;
-
-  await prisma.$transaction([
-    prisma.chapter.update({
-      where: { id: chapter.id },
-      data: { chapterNumber: tempChapterNumber },
-    }),
-    prisma.chapter.update({
-      where: { id: neighbor.id },
-      data: { chapterNumber: chapter.chapterNumber },
-    }),
-    prisma.chapter.update({
-      where: { id: chapter.id },
-      data: { chapterNumber: neighbor.chapterNumber },
-    }),
-  ]);
-
-  return { movedChapterId: chapter.id };
-};
-
 const deleteChapter = async ({ chapterId, requester }) => {
   const chapter = await prisma.chapter.findUnique({
     where: { id: chapterId },
@@ -1771,7 +1728,6 @@ module.exports = {
   updateChapter,
   publishChapter,
   unpublishChapter,
-  moveChapter,
   deleteChapter,
 };
 
