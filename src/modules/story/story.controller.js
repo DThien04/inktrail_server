@@ -3,7 +3,17 @@ const storyService = require("./story.service");
 
 const createStory = async (req, res) => {
   try {
-    const { title, slug, description, cover_url, cover_base64, status, genre_ids } = req.body;
+    const {
+      title,
+      slug,
+      description,
+      cover_url,
+      cover_base64,
+      status,
+      genre_ids,
+      tag_ids,
+      tag_names,
+    } = req.body;
     const coverFile = req.file;
 
     const story = await storyService.createStory({
@@ -17,6 +27,8 @@ const createStory = async (req, res) => {
       coverMimeType: coverFile?.mimetype,
       status,
       genreIds: genre_ids,
+      tagIds: tag_ids,
+      tagNames: tag_names,
     });
 
     res.status(201).json({
@@ -83,6 +95,7 @@ const searchStories = async (req, res) => {
     const stories = await storyService.searchStories({
       query: req.query.query,
       genreId: req.query.genre_id,
+      tagId: req.query.tag_id,
       sort: req.query.sort,
       limit: req.query.limit,
     });
@@ -222,7 +235,17 @@ const getBySlug = async (req, res) => {
 
 const updateStory = async (req, res) => {
   try {
-    const { title, slug, description, cover_url, cover_base64, status, genre_ids } = req.body;
+    const {
+      title,
+      slug,
+      description,
+      cover_url,
+      cover_base64,
+      status,
+      genre_ids,
+      tag_ids,
+      tag_names,
+    } = req.body;
     const coverFile = req.file;
 
     const story = await storyService.updateStory({
@@ -237,6 +260,8 @@ const updateStory = async (req, res) => {
       coverMimeType: coverFile?.mimetype,
       status,
       genreIds: genre_ids,
+      tagIds: tag_ids,
+      tagNames: tag_names,
     });
 
     res.json({

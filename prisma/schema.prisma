@@ -8,60 +8,58 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  email       String   @unique
-  password    String
-  displayName String   @map("display_name")
-  avatarUrl   String?  @map("avatar_url")
-  bio         String?  @map("bio")
-  role        Role     @default(reader)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  refreshTokens         RefreshToken[]
-  passwordResetOtps     PasswordResetOtp[]
-  stories               Story[]
-  chapterLikes          ChapterLike[]
-  chapterComments       ChapterComment[]
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  password              String
+  displayName           String                 @map("display_name")
+  avatarUrl             String?                @map("avatar_url")
+  role                  Role                   @default(reader)
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  bio                   String?                @map("bio")
+  reviewedApplications  AuthorApplication[]    @relation("AuthorApplicationReviewer")
+  authorApplications    AuthorApplication[]    @relation("AuthorApplicationUser")
+  authorFollowers       AuthorFollow[]         @relation("AuthorFollowers")
+  followingAuthors      AuthorFollow[]         @relation("AuthorFollowing")
   chapterCommentLikes   ChapterCommentLike[]
   chapterCommentReports ChapterCommentReport[]
   moderatedComments     ChapterComment[]       @relation("CommentModeratedBy")
-  moderatedChapters     Chapter[]              @relation("ChapterModeratedBy")
-  moderatedStories      Story[]                @relation("StoryModeratedBy")
-  storyReports          StoryReport[]
+  chapterComments       ChapterComment[]
+  chapterLikes          ChapterLike[]
   chapterReports        ChapterReport[]
-  readingProgresses     ReadingProgress[]
-  readSessions          StoryReadSession[]
-  storyRatings          StoryRating[]
-  followingAuthors      AuthorFollow[]         @relation("AuthorFollowing")
-  authorFollowers       AuthorFollow[]         @relation("AuthorFollowers")
-  notificationsReceived Notification[]         @relation("UserNotifications")
+  moderatedChapters     Chapter[]              @relation("ChapterModeratedBy")
   notificationsSent     Notification[]         @relation("NotificationActor")
-  authorApplications    AuthorApplication[]    @relation("AuthorApplicationUser")
-  reviewedApplications  AuthorApplication[]    @relation("AuthorApplicationReviewer")
+  notificationsReceived Notification[]         @relation("UserNotifications")
+  passwordResetOtps     PasswordResetOtp[]
+  readingProgresses     ReadingProgress[]
+  refreshTokens         RefreshToken[]
+  stories               Story[]
+  moderatedStories      Story[]                @relation("StoryModeratedBy")
+  storyRatings          StoryRating[]
+  readSessions          StoryReadSession[]
+  storyReports          StoryReport[]
 
   @@map("users")
 }
 
 model AuthorApplication {
-  id                   String                  @id @default(uuid())
-  userId               String                  @map("user_id")
-  penName              String                  @map("pen_name")
-  bio                  String?                 @map("bio")
-  reason               String?                 @map("reason")
-  sampleLinks          Json?                   @map("sample_links")
-  status               AuthorApplicationStatus @default(pending)
-  trustScoreSnapshot   Int                     @default(0) @map("trust_score_snapshot")
-  eligibilitySnapshot  Json?                   @map("eligibility_snapshot")
-  reviewedById         String?                 @map("reviewed_by_id")
-  reviewedAt           DateTime?               @map("reviewed_at")
-  reviewNote           String?                 @map("review_note")
-  rejectCooldownUntil  DateTime?               @map("reject_cooldown_until")
-  createdAt            DateTime                @default(now()) @map("created_at")
-  updatedAt            DateTime                @updatedAt @map("updated_at")
-
-  user       User  @relation("AuthorApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
-  reviewedBy User? @relation("AuthorApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  id                  String                  @id @default(uuid())
+  userId              String                  @map("user_id")
+  penName             String                  @map("pen_name")
+  bio                 String?                 @map("bio")
+  reason              String?                 @map("reason")
+  sampleLinks         Json?                   @map("sample_links")
+  status              AuthorApplicationStatus @default(pending)
+  trustScoreSnapshot  Int                     @default(0) @map("trust_score_snapshot")
+  eligibilitySnapshot Json?                   @map("eligibility_snapshot")
+  reviewedById        String?                 @map("reviewed_by_id")
+  reviewedAt          DateTime?               @map("reviewed_at")
+  reviewNote          String?                 @map("review_note")
+  rejectCooldownUntil DateTime?               @map("reject_cooldown_until")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  reviewedBy          User?                   @relation("AuthorApplicationReviewer", fields: [reviewedById], references: [id])
+  user                User                    @relation("AuthorApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status, createdAt])
   @@index([status, createdAt])
@@ -74,9 +72,8 @@ model AuthorFollow {
   followerId String   @map("follower_id")
   authorId   String   @map("author_id")
   createdAt  DateTime @default(now()) @map("created_at")
-
-  follower User @relation("AuthorFollowing", fields: [followerId], references: [id], onDelete: Cascade)
-  author   User @relation("AuthorFollowers", fields: [authorId], references: [id], onDelete: Cascade)
+  author     User     @relation("AuthorFollowers", fields: [authorId], references: [id], onDelete: Cascade)
+  follower   User     @relation("AuthorFollowing", fields: [followerId], references: [id], onDelete: Cascade)
 
   @@unique([followerId, authorId])
   @@index([authorId, createdAt])
@@ -90,8 +87,7 @@ model RefreshToken {
   userId    String   @map("user_id")
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
@@ -105,8 +101,7 @@ model PasswordResetOtp {
   attemptCount Int       @default(0) @map("attempt_count")
   usedAt       DateTime? @map("used_at")
   createdAt    DateTime  @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([email, createdAt])
   @@index([userId, createdAt])
@@ -115,35 +110,35 @@ model PasswordResetOtp {
 }
 
 model Story {
-  id           String      @id @default(uuid())
-  title        String
-  slug         String      @unique
-  description  String?
-  coverUrl     String?     @map("cover_url")
-  status       StoryStatus @default(draft)
-  moderationStatus     ModerationStatus @default(pending) @map("moderation_status")
-  moderationCheckedAt  DateTime?        @map("moderation_checked_at")
-  moderationCategories Json?            @map("moderation_categories")
-  moderationConfidence Float?           @map("moderation_confidence")
-  moderationReason     String?          @map("moderation_reason")
-  isHidden     Boolean     @default(false) @map("is_hidden")
-  hiddenAt     DateTime?   @map("hidden_at")
-  hiddenById   String?     @map("hidden_by_id")
-  hiddenReason String?     @map("hidden_reason")
-  authorId     String      @map("author_id")
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
-
-  author            User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  hiddenBy          User?              @relation("StoryModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
-  chapters          Chapter[]
-  ratings           StoryRating[]
-  storyGenres       StoryGenre[]
-  readingProgresses ReadingProgress[]
-  readSessions      StoryReadSession[]
-  stats             StoryStat?
-  notifications     Notification[]
-  reports           StoryReport[]
+  id                   String             @id @default(uuid())
+  title                String
+  slug                 String             @unique
+  description          String?
+  coverUrl             String?            @map("cover_url")
+  status               StoryStatus        @default(draft)
+  authorId             String             @map("author_id")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  isHidden             Boolean            @default(false) @map("is_hidden")
+  hiddenAt             DateTime?          @map("hidden_at")
+  hiddenById           String?            @map("hidden_by_id")
+  hiddenReason         String?            @map("hidden_reason")
+  moderationCategories Json?              @map("moderation_categories")
+  moderationCheckedAt  DateTime?          @map("moderation_checked_at")
+  moderationConfidence Float?             @map("moderation_confidence")
+  moderationReason     String?            @map("moderation_reason")
+  moderationStatus     ModerationStatus   @default(pending) @map("moderation_status")
+  chapters             Chapter[]
+  notifications        Notification[]
+  readingProgresses    ReadingProgress[]
+  author               User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  hiddenBy             User?              @relation("StoryModeratedBy", fields: [hiddenById], references: [id])
+  storyGenres          StoryGenre[]
+  storyTags            StoryTag[]
+  ratings              StoryRating[]
+  readSessions         StoryReadSession[]
+  reports              StoryReport[]
+  stats                StoryStat?
 
   @@index([authorId])
   @@index([status, createdAt])
@@ -161,9 +156,8 @@ model ReadingProgress {
   lastPosition     Int?     @map("last_position")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  story            Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, storyId])
   @@index([userId, updatedAt])
@@ -182,9 +176,8 @@ model StoryReadSession {
   countedAt        DateTime @default(now()) @map("counted_at")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
-
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  user  User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story            Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user             User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([storyId, countedAt])
   @@index([userId, storyId, countedAt])
@@ -195,12 +188,11 @@ model StoryReadSession {
 model StoryStat {
   storyId      String   @id @map("story_id")
   readCount    Int      @default(0) @map("read_count")
-  likeCount    Int      @default(0) @map("like_count")
-  commentCount Int      @default(0) @map("comment_count")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  likeCount    Int      @default(0) @map("like_count")
+  commentCount Int      @default(0) @map("comment_count")
+  story        Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@map("story_stats")
 }
@@ -208,43 +200,43 @@ model StoryStat {
 model ChapterStat {
   chapterId    String   @id @map("chapter_id")
   likeCount    Int      @default(0) @map("like_count")
-  commentCount Int      @default(0) @map("comment_count")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-
-  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  commentCount Int      @default(0) @map("comment_count")
+  chapter      Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   @@map("chapter_stats")
 }
 
 model Chapter {
-  id            String        @id @default(uuid())
-  storyId       String        @map("story_id")
-  chapterNumber Int           @map("chapter_number")
-  title         String
-  content       String
-  status        ChapterStatus @default(draft)
-  moderationStatus     ModerationStatus @default(pending) @map("moderation_status")
-  moderationCheckedAt  DateTime?        @map("moderation_checked_at")
-  moderationCategories Json?            @map("moderation_categories")
-  moderationConfidence Float?           @map("moderation_confidence")
-  moderationReason     String?          @map("moderation_reason")
-  isHidden      Boolean       @default(false) @map("is_hidden")
-  hiddenAt      DateTime?     @map("hidden_at")
-  hiddenById    String?       @map("hidden_by_id")
-  hiddenReason  String?       @map("hidden_reason")
-  publishedAt   DateTime?     @map("published_at")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-
-  story           Story                   @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  hiddenBy        User?                   @relation("ChapterModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
-  stats           ChapterStat?
-  likes           ChapterLike[]
-  comments        ChapterComment[]
-  featuredComment ChapterFeaturedComment?
-  notifications   Notification[]
-  reports         ChapterReport[]
+  id                   String                  @id @default(uuid())
+  storyId              String                  @map("story_id")
+  chapterNumber        Int                     @map("chapter_number")
+  title                String
+  content              String
+  status               ChapterStatus           @default(draft)
+  publishedAt          DateTime?               @map("published_at")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  isHidden             Boolean                 @default(false) @map("is_hidden")
+  hiddenAt             DateTime?               @map("hidden_at")
+  hiddenById           String?                 @map("hidden_by_id")
+  hiddenReason         String?                 @map("hidden_reason")
+  lastApprovedContentHash String?              @map("last_approved_content_hash")
+  lastRejectedContentHash String?              @map("last_rejected_content_hash")
+  moderationCategories Json?                   @map("moderation_categories")
+  moderationCheckedAt  DateTime?               @map("moderation_checked_at")
+  moderationConfidence Float?                  @map("moderation_confidence")
+  moderationReason     String?                 @map("moderation_reason")
+  moderationStatus     ModerationStatus        @default(pending) @map("moderation_status")
+  comments             ChapterComment[]
+  featuredComment      ChapterFeaturedComment?
+  likes                ChapterLike[]
+  reports              ChapterReport[]
+  stats                ChapterStat?
+  hiddenBy             User?                   @relation("ChapterModeratedBy", fields: [hiddenById], references: [id])
+  story                Story                   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  notifications        Notification[]
 
   @@unique([storyId, chapterNumber])
   @@index([storyId, status])
@@ -259,13 +251,12 @@ model StoryRating {
   userId    String   @map("user_id")
   storyId   String   @map("story_id")
   score     Int
-  content   String
   editCount Int      @default(0) @map("edit_count")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  content   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, storyId])
   @@index([storyId, createdAt])
@@ -278,9 +269,8 @@ model ChapterLike {
   userId    String   @map("user_id")
   chapterId String   @map("chapter_id")
   createdAt DateTime @default(now()) @map("created_at")
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, chapterId])
   @@index([chapterId])
@@ -294,25 +284,24 @@ model ChapterComment {
   chapterId            String                         @map("chapter_id")
   content              String
   isEdited             Boolean                        @default(false) @map("is_edited")
+  createdAt            DateTime                       @default(now()) @map("created_at")
+  updatedAt            DateTime                       @updatedAt @map("updated_at")
+  isHidden             Boolean                        @default(false) @map("is_hidden")
+  hiddenAt             DateTime?                      @map("hidden_at")
+  hiddenById           String?                        @map("hidden_by_id")
+  hiddenReason         String?                        @map("hidden_reason")
   moderationStatus     ChapterCommentModerationStatus @default(pending) @map("moderation_status")
   moderationCheckedAt  DateTime?                      @map("moderation_checked_at")
   moderationCategories Json?                          @map("moderation_categories")
   moderationConfidence Float?                         @map("moderation_confidence")
   moderationReason     String?                        @map("moderation_reason")
-  isHidden             Boolean                        @default(false) @map("is_hidden")
-  hiddenAt             DateTime?                      @map("hidden_at")
-  hiddenById           String?                        @map("hidden_by_id")
-  hiddenReason         String?                        @map("hidden_reason")
-  createdAt            DateTime                       @default(now()) @map("created_at")
-  updatedAt            DateTime                       @updatedAt @map("updated_at")
-
-  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chapter           Chapter                 @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  hiddenBy          User?                   @relation("CommentModeratedBy", fields: [hiddenById], references: [id], onDelete: SetNull)
-  likes             ChapterCommentLike[]
-  reports           ChapterCommentReport[]
-  stats             ChapterCommentStat?
-  featuredInChapter ChapterFeaturedComment?
+  likes                ChapterCommentLike[]
+  reports              ChapterCommentReport[]
+  stats                ChapterCommentStat?
+  chapter              Chapter                        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  hiddenBy             User?                          @relation("CommentModeratedBy", fields: [hiddenById], references: [id])
+  user                 User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  featuredInChapter    ChapterFeaturedComment?
 
   @@index([chapterId, createdAt])
   @@index([chapterId, isHidden, createdAt])
@@ -323,13 +312,12 @@ model ChapterComment {
 }
 
 model ChapterCommentLike {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  commentId String   @map("comment_id")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  id        String         @id @default(uuid())
+  userId    String         @map("user_id")
+  commentId String         @map("comment_id")
+  createdAt DateTime       @default(now()) @map("created_at")
+  comment   ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, commentId])
   @@index([commentId])
@@ -342,10 +330,17 @@ model ReportCase {
   targetType             ReportTargetType        @map("target_type")
   targetId               String                  @map("target_id")
   status                 ReportCaseStatus        @default(pending)
-  priority               ReportCasePriority      @default(low)
   resolutionAction       ReportResolutionAction? @map("resolution_action")
+  reportCount            Int                     @default(0) @map("report_count")
+  uniqueReporterCount    Int                     @default(0) @map("unique_reporter_count")
+  lastReportedAt         DateTime                @default(now()) @map("last_reported_at")
+  resolvedAt             DateTime?               @map("resolved_at")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+  priority               ReportCasePriority      @default(low)
   lastResolutionAction   ReportResolutionAction? @map("last_resolution_action")
   riskScore              Int                     @default(0) @map("risk_score")
+  reopenedCount          Int                     @default(0) @map("reopened_count")
   aiFlagged              Boolean                 @default(false) @map("ai_flagged")
   aiCategories           Json?                   @map("ai_categories")
   aiConfidence           Float?                  @map("ai_confidence")
@@ -353,6 +348,8 @@ model ReportCase {
   aiSummary              String?                 @map("ai_summary")
   aiSuggestedAction      String?                 @map("ai_suggested_action")
   aiCheckedAt            DateTime?               @map("ai_checked_at")
+  restoredAt             DateTime?               @map("restored_at")
+  restoredById           String?                 @map("restored_by_id")
   appealStatus           ReportAppealStatus?     @map("appeal_status")
   appealReason           String?                 @map("appeal_reason")
   appealSubmittedAt      DateTime?               @map("appeal_submitted_at")
@@ -362,19 +359,9 @@ model ReportCase {
   appealAiRecommendation String?                 @map("appeal_ai_recommendation")
   appealAiConfidence     Float?                  @map("appeal_ai_confidence")
   appealAiCheckedAt      DateTime?               @map("appeal_ai_checked_at")
-  reportCount            Int                     @default(0) @map("report_count")
-  uniqueReporterCount    Int                     @default(0) @map("unique_reporter_count")
-  reopenedCount          Int                     @default(0) @map("reopened_count")
-  lastReportedAt         DateTime                @default(now()) @map("last_reported_at")
-  resolvedAt             DateTime?               @map("resolved_at")
-  restoredAt             DateTime?               @map("restored_at")
-  restoredById           String?                 @map("restored_by_id")
-  createdAt              DateTime                @default(now()) @map("created_at")
-  updatedAt              DateTime                @updatedAt @map("updated_at")
-
-  storyReports          StoryReport[]
-  chapterReports        ChapterReport[]
-  chapterCommentReports ChapterCommentReport[]
+  chapterCommentReports  ChapterCommentReport[]
+  chapterReports         ChapterReport[]
+  storyReports           StoryReport[]
 
   @@unique([targetType, targetId])
   @@index([status, lastReportedAt])
@@ -385,7 +372,6 @@ model ReportCase {
 
 model ChapterCommentReport {
   id          String                     @id @default(uuid())
-  caseId      String                     @map("case_id")
   reporterId  String                     @map("reporter_id")
   commentId   String                     @map("comment_id")
   reason      ChapterCommentReportReason
@@ -394,10 +380,10 @@ model ChapterCommentReport {
   createdAt   DateTime                   @default(now()) @map("created_at")
   updatedAt   DateTime                   @updatedAt @map("updated_at")
   resolvedAt  DateTime?                  @map("resolved_at")
-
-  reportCase ReportCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  reporter   User           @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  comment    ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  caseId      String                     @map("case_id")
+  reportCase  ReportCase                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  comment     ChapterComment             @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  reporter    User                       @relation(fields: [reporterId], references: [id], onDelete: Cascade)
 
   @@unique([reporterId, commentId])
   @@index([caseId, createdAt])
@@ -409,7 +395,6 @@ model ChapterCommentReport {
 
 model StoryReport {
   id          String              @id @default(uuid())
-  caseId      String              @map("case_id")
   reporterId  String              @map("reporter_id")
   storyId     String              @map("story_id")
   reason      ContentReportReason
@@ -418,10 +403,10 @@ model StoryReport {
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
   resolvedAt  DateTime?           @map("resolved_at")
-
-  reportCase ReportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  reporter   User       @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  story      Story      @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  caseId      String              @map("case_id")
+  reportCase  ReportCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reporter    User                @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  story       Story               @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@unique([reporterId, storyId])
   @@index([caseId, createdAt])
@@ -433,7 +418,6 @@ model StoryReport {
 
 model ChapterReport {
   id          String              @id @default(uuid())
-  caseId      String              @map("case_id")
   reporterId  String              @map("reporter_id")
   chapterId   String              @map("chapter_id")
   reason      ContentReportReason
@@ -442,10 +426,10 @@ model ChapterReport {
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
   resolvedAt  DateTime?           @map("resolved_at")
-
-  reportCase ReportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  reporter   User       @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  chapter    Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  caseId      String              @map("case_id")
+  reportCase  ReportCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  chapter     Chapter             @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  reporter    User                @relation(fields: [reporterId], references: [id], onDelete: Cascade)
 
   @@unique([reporterId, chapterId])
   @@index([caseId, createdAt])
@@ -456,27 +440,25 @@ model ChapterReport {
 }
 
 model ChapterCommentStat {
-  commentId String   @id @map("comment_id")
-  likeCount Int      @default(0) @map("like_count")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId String         @id @map("comment_id")
+  likeCount Int            @default(0) @map("like_count")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+  comment   ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   @@map("chapter_comment_stats")
 }
 
 model ChapterFeaturedComment {
-  chapterId  String   @id @map("chapter_id")
-  commentId  String   @unique @map("comment_id")
-  score      Float    @default(0)
+  chapterId  String         @id @map("chapter_id")
+  commentId  String         @unique @map("comment_id")
+  score      Float          @default(0)
   reason     String?
-  computedAt DateTime @default(now()) @map("computed_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  chapter Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  comment ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  computedAt DateTime       @default(now()) @map("computed_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  chapter    Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  comment    ChapterComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   @@index([score])
   @@index([computedAt])
@@ -498,11 +480,10 @@ model Notification {
   readAt      DateTime?        @map("read_at")
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
-
-  recipient User     @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
-  actor     User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
-  story     Story?   @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  chapter   Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id])
+  chapter     Chapter?         @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  recipient   User             @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+  story       Story?           @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@index([recipientId, isRead, createdAt])
   @@index([recipientId, createdAt])
@@ -528,31 +509,54 @@ model Announcement {
 }
 
 model Genre {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  slug        String   @unique
+  id          String       @id @default(uuid())
+  name        String       @unique
+  slug        String       @unique
   description String?
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
   storyGenres StoryGenre[]
 
   @@index([isActive, name])
   @@map("genres")
 }
 
+model Tag {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  isActive    Boolean    @default(true) @map("is_active")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  storyTags   StoryTag[]
+
+  @@index([isActive, name])
+  @@map("tags")
+}
+
 model StoryGenre {
   storyId   String   @map("story_id")
   genreId   String   @map("genre_id")
   createdAt DateTime @default(now()) @map("created_at")
-
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+  genre     Genre    @relation(fields: [genreId], references: [id], onDelete: Cascade)
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@id([storyId, genreId])
   @@index([genreId])
   @@map("story_genres")
+}
+
+model StoryTag {
+  storyId   String   @map("story_id")
+  tagId     String   @map("tag_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, tagId])
+  @@index([tagId])
+  @@map("story_tags")
 }
 
 enum Role {

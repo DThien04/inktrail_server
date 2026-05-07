@@ -11,6 +11,7 @@ router.use("/admin/dashboard", require("../modules/admin_dashboard/admin_dashboa
 router.use("/stories", require("../modules/story/story.route"));
 router.use("/chapters", require("../modules/chapter/chapter.route"));
 router.use("/genres", require("../modules/genre/genre.route"));
+router.use("/tags", require("../modules/tag/tag.route"));
 router.use("/users", require("../modules/user/user.route"));
 router.use("/", require("../modules/home/home.route"));
 // Sau thêm feature mới vào đây:
