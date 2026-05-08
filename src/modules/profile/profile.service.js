@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const bcrypt = require("bcryptjs");
 const { uploadAvatarAndGetUrl } = require("../upload/upload.service");
 const notificationService = require("../notification/notification.service");
@@ -78,7 +78,7 @@ const formatFollower = (row) => ({
 
 const getMyProfile = async (userId) => {
   const profileStats = await getProfileStats(userId);
-  if (!profileStats) throw new Error("Khong tim thay nguoi dung");
+  if (!profileStats) throw new Error("Không tìm thấy người dùng.");
   return formatUserProfile(profileStats.user, profileStats.stats);
 };
 
@@ -120,7 +120,7 @@ const getProfileById = async ({ profileId, requesterId = null }) => {
       : null,
   ]);
 
-  if (!user) throw new Error("Khong tim thay ho so nguoi dung");
+  if (!user) throw new Error("Không tìm thấy hồ sơ người dùng.");
 
   return {
     id: user.id,
@@ -138,7 +138,7 @@ const getProfileById = async ({ profileId, requesterId = null }) => {
 
 const ensureAuthorCanBeFollowed = async (authorId) => {
   const normalizedAuthorId = String(authorId ?? "").trim();
-  if (!normalizedAuthorId) throw new Error("Thiếu id người dùng");
+  if (!normalizedAuthorId) throw new Error("Thiếu thông tin tác giả.");
 
   const user = await prisma.user.findUnique({
     where: { id: normalizedAuthorId },
@@ -149,14 +149,14 @@ const ensureAuthorCanBeFollowed = async (authorId) => {
     },
   });
 
-  if (!user) throw new Error("Không tìm thấy người dùng");
+  if (!user) throw new Error("Không tìm thấy tác giả.");
   return user;
 };
 
 const followAuthor = async ({ followerId, authorId }) => {
   const author = await ensureAuthorCanBeFollowed(authorId);
   if (followerId === author.id) {
-    throw new Error("Bạn không thể tự theo dõi chính mình");
+    throw new Error("Bạn không thể theo dõi chính mình.");
   }
 
   const existing = await prisma.authorFollow.findUnique({
@@ -180,8 +180,8 @@ const followAuthor = async ({ followerId, authorId }) => {
       recipientId: author.id,
       actorId: followerId,
       type: "system",
-      title: "Ban co nguoi theo doi moi",
-      body: "Mot nguoi dung vua theo doi ban.",
+      title: "Bạn có người theo dõi mới",
+      body: "Một độc giả vừa bắt đầu theo dõi bạn.",
       linkUrl: `/profile/${author.id}`,
       meta: {
         user_id: author.id,
@@ -205,13 +205,15 @@ const followAuthor = async ({ followerId, authorId }) => {
 const unfollowAuthor = async ({ followerId, authorId }) => {
   const author = await ensureAuthorCanBeFollowed(authorId);
   if (followerId === author.id) {
-    throw new Error("Bạn không thể bỏ theo dõi chính mình");
+    throw new Error("Bạn không thể bỏ theo dõi chính mình theo cách này.");
   }
 
-  await prisma.authorFollow.deleteMany({
+  await prisma.authorFollow.delete({
     where: {
-      followerId,
-      authorId: author.id,
+      followerId_authorId: {
+        followerId,
+        authorId: author.id,
+      },
     },
   });
 
@@ -311,22 +313,22 @@ const updateMyProfile = async ({
   avatarMimeType,
 }) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error("Khong tim thay nguoi dung");
+  if (!user) throw new Error("Không tìm thấy người dùng.");
 
   const data = {};
 
   if (displayName !== undefined) {
     const normalizedDisplayName = String(displayName).trim();
-    if (!normalizedDisplayName) throw new Error("displayName khong duoc de trong");
+    if (!normalizedDisplayName) throw new Error("Tên hiển thị không được để trống.");
     if (normalizedDisplayName.length > 50) {
-      throw new Error("displayName toi da 50 ky tu");
+      throw new Error("Tên hiển thị tối đa 50 ký tự.");
     }
     data.displayName = normalizedDisplayName;
   }
 
   if (bio !== undefined) {
     const normalizedBio = String(bio).trim();
-    if (normalizedBio.length > 160) throw new Error("bio toi da 160 ky tu");
+    if (normalizedBio.length > 160) throw new Error("Giới thiệu tối đa 160 ký tự.");
     data.bio = normalizedBio || null;
   }
 
@@ -340,7 +342,7 @@ const updateMyProfile = async ({
   }
 
   if (!Object.keys(data).length) {
-    throw new Error("Khong co du lieu hop le de cap nhat");
+    throw new Error("Chưa có thông tin nào để cập nhật.");
   }
 
   const updatedUser = await prisma.user.update({
@@ -360,25 +362,25 @@ const changeMyPassword = async ({ userId, oldPassword, newPassword }) => {
   const normalizedNewPassword = String(newPassword ?? "");
 
   if (!normalizedOldPassword || !normalizedNewPassword) {
-    throw new Error("Thiếu dữ liệu mật khẩu");
+    throw new Error("Vui lòng nhập đủ mật khẩu cũ và mật khẩu mới.");
   }
 
   if (normalizedNewPassword.length < 6) {
-    throw new Error("Mật khẩu mới phải có ít nhất 6 ký tự");
+    throw new Error("Mật khẩu mới cần ít nhất 6 ký tự.");
   }
 
   if (normalizedOldPassword === normalizedNewPassword) {
-    throw new Error("Mật khẩu mới phải khác mật khẩu cũ");
+    throw new Error("Mật khẩu mới cần khác mật khẩu hiện tại.");
   }
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, password: true },
   });
-  if (!user) throw new Error("Không tìm thấy người dùng");
+  if (!user) throw new Error("Không tìm thấy tài khoản.");
 
   const isMatch = await bcrypt.compare(normalizedOldPassword, user.password);
-  if (!isMatch) throw new Error("Mật khẩu cũ không đúng");
+  if (!isMatch) throw new Error("Mật khẩu hiện tại chưa đúng.");
 
   const hashedPassword = await bcrypt.hash(normalizedNewPassword, 12);
 
@@ -573,3 +575,4 @@ module.exports = {
   upsertMyReadingProgress,
   listMyReadingProgress,
 };
+

@@ -7,15 +7,15 @@ const handleError = (err, res) => {
       case "P1008": // Operations timed out
         return res
           .status(503)
-          .json({ message: "Lỗi kết nối, vui lòng thử lại sau" });
+          .json({ message: "Database temporarily unavailable. Please try again." });
       case "P2002": // Unique constraint
-        return res.status(400).json({ message: "Dữ liệu đã tồn tại" });
+        return res.status(400).json({ message: "Thông tin này đã được sử dụng rồi." });
       case "P2025": // Record not found
-        return res.status(404).json({ message: "Không tìm thấy dữ liệu" });
+        return res.status(404).json({ message: "Không tìm thấy nội dung bạn cần." });
       default:
         return res
           .status(500)
-          .json({ message: "Lỗi server, vui lòng thử lại sau" });
+          .json({ message: "Database error. Please try again later." });
     }
   }
 
@@ -25,7 +25,7 @@ const handleError = (err, res) => {
   }
 
   // Unknown
-  return res.status(500).json({ message: "Lỗi server, vui lòng thử lại sau" });
+  return res.status(500).json({ message: "Internal server error. Please try again later." });
 };
 
 module.exports = { handleError };

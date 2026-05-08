@@ -31,6 +31,46 @@ const getTags = async (req, res) => {
   }
 };
 
+const getAdminTags = async (req, res) => {
+  try {
+    const page = Number(req.query.page || 1);
+    const pageSize = Number(req.query.page_size || req.query.pageSize || 20);
+    const result = await tagService.getAdminTags({
+      keyword: req.query.keyword,
+      groupId: req.query.group_id || req.query.groupId,
+      page,
+      pageSize,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const mergeTag = async (req, res) => {
+  try {
+    const result = await tagService.mergeTag({
+      fromTagId: req.params.id,
+      toTagId: req.body?.to_tag_id || req.body?.toTagId,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const mergeTagsBulk = async (req, res) => {
+  try {
+    const result = await tagService.mergeTagsBulk({
+      fromTagIds: req.body?.from_tag_ids || req.body?.fromTagIds,
+      toTagId: req.body?.to_tag_id || req.body?.toTagId,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 const getById = async (req, res) => {
   try {
     const tag = await tagService.getTagById(req.params.id);
@@ -47,12 +87,25 @@ const updateTag = async (req, res) => {
       tagId: req.params.id,
       name,
       description,
+      groupId: req.body?.group_id || req.body?.groupId,
     });
 
     res.json({
       message: "Cập nhật tag thành công",
       tag,
     });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const setTagsGroupBulk = async (req, res) => {
+  try {
+    const result = await tagService.setTagsGroupBulk({
+      tagIds: req.body?.tag_ids || req.body?.tagIds,
+      groupId: req.body?.group_id || req.body?.groupId,
+    });
+    res.json(result);
   } catch (err) {
     handleError(err, res);
   }
@@ -106,9 +159,13 @@ const deleteTag = async (req, res) => {
 module.exports = {
   createTag,
   getTags,
+  getAdminTags,
   getById,
   updateTag,
   activateTag,
   deactivateTag,
+  mergeTag,
+  mergeTagsBulk,
+  setTagsGroupBulk,
   deleteTag,
 };

@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
 const {
   recomputeChapterFeaturedComment,
@@ -189,7 +189,7 @@ const scheduleReportAppealAiAnalysis = ({
 const validateCommentReportReason = (reason) => {
   const normalizedReason = normalizeText(reason).toLowerCase();
   if (!ALLOWED_COMMENT_REPORT_REASONS.has(normalizedReason)) {
-    throw new Error("Ly do bao cao khong hop le");
+    throw new Error("Lý do báo cáo không hợp lệ.");
   }
   return normalizedReason;
 };
@@ -197,7 +197,7 @@ const validateCommentReportReason = (reason) => {
 const validateContentReportReason = (reason) => {
   const normalizedReason = normalizeText(reason).toLowerCase();
   if (!ALLOWED_CONTENT_REPORT_REASONS.has(normalizedReason)) {
-    throw new Error("Ly do bao cao khong hop le");
+    throw new Error("Lý do báo cáo không hợp lệ.");
   }
   return normalizedReason;
 };
@@ -206,7 +206,7 @@ const validateCommentReportDescription = (description) => {
   const normalizedDescription = normalizeText(description);
   if (!normalizedDescription) return null;
   if (normalizedDescription.length > 500) {
-    throw new Error("Mo ta bao cao toi da 500 ky tu");
+    throw new Error("Mô tả báo cáo tối đa 500 ký tự.");
   }
   return normalizedDescription;
 };
@@ -214,10 +214,10 @@ const validateCommentReportDescription = (description) => {
 const validateContentReportDescription = (description) => {
   const normalizedDescription = normalizeText(description);
   if (!normalizedDescription) {
-    throw new Error("Vui long nhap mo ta bao cao");
+    throw new Error("Vui lòng nhập mô tả báo cáo.");
   }
   if (normalizedDescription.length > 500) {
-    throw new Error("Mo ta bao cao toi da 500 ky tu");
+    throw new Error("Mô tả báo cáo tối đa 500 ký tự.");
   }
   return normalizedDescription;
 };
@@ -239,7 +239,7 @@ const getRequesterDisplayName = (requester) =>
 const validateAdminReportType = (type) => {
   const normalizedType = normalizeText(type).toLowerCase();
   if (!ADMIN_REPORT_TYPES.has(normalizedType)) {
-    throw new Error("Loai bao cao khong hop le");
+    throw new Error("Loại báo cáo không hợp lệ.");
   }
   return normalizedType;
 };
@@ -254,7 +254,7 @@ const validateAdminReportStatus = ({ type, status }) => {
       : CONTENT_REPORT_STATUSES;
 
   if (!allowedStatuses.has(normalizedStatus)) {
-    throw new Error("Trang thai bao cao khong hop le");
+    throw new Error("Trạng thái báo cáo không hợp lệ.");
   }
   return normalizedStatus;
 };
@@ -319,14 +319,13 @@ const buildReportSummary = ({ type, report }) => {
         status: story.status,
         is_hidden: Boolean(story.isHidden),
         hidden_at: story.hiddenAt ?? null,
-        genres: Array.isArray(story.storyGenres)
-          ? story.storyGenres
-              .map((item) => item.genre)
+        tags: Array.isArray(story.storyTags)
+          ? story.storyTags
+              .map((item) => item.tag)
               .filter(Boolean)
-              .map((genre) => ({
-                id: genre.id,
-                name: genre.name,
-                slug: genre.slug,
+              .map((tag) => ({
+                id: tag.id,
+                name: tag.name,
               }))
           : [],
         author: story.author
@@ -550,13 +549,12 @@ const getAdminReportInclude = (type) => {
           author: {
             select: { id: true, displayName: true, email: true },
           },
-          storyGenres: {
+          storyTags: {
             select: {
-              genre: {
+              tag: {
                 select: {
                   id: true,
                   name: true,
-                  slug: true,
                 },
               },
             },
@@ -851,10 +849,10 @@ const syncReportCase = async ({ db = prisma, type, caseId }) => {
 };
 
 const ensureChapterCommentCanBeReported = async ({ commentId, requester }) => {
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thieu id binh luan");
+  if (!normalizedCommentId) throw new Error("Thiếu thông tin bình luận.");
 
   const comment = await prisma.chapterComment.findUnique({
     where: { id: normalizedCommentId },
@@ -875,30 +873,30 @@ const ensureChapterCommentCanBeReported = async ({ commentId, requester }) => {
     },
   });
 
-  if (!comment) throw new Error("Khong tim thay binh luan");
+  if (!comment) throw new Error("Không tìm thấy bình luận.");
   if (comment.isHidden) {
-    throw new Error("Binh luan da bi go");
+    throw new Error("Bình luận này đã bị gỡ.");
   }
 
   const isStoryOwner = comment.chapter.story.authorId === requester.id;
   const canViewDraft = Boolean(isStoryOwner || isAdmin(requester));
 
   if (comment.chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyen chua duoc xuat ban");
+    throw new Error("Truyện chưa được xuất bản.");
   }
 
   if (comment.chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chuong chua duoc xuat ban");
+    throw new Error("Chương chưa được xuất bản.");
   }
 
   return comment;
 };
 
 const ensureStoryCanBeReported = async ({ storyId, requester }) => {
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const normalizedStoryId = normalizeText(storyId);
-  if (!normalizedStoryId) throw new Error("Thieu id truyen");
+  if (!normalizedStoryId) throw new Error("Thiếu thông tin truyện.");
 
   const story = await prisma.story.findUnique({
     where: { id: normalizedStoryId },
@@ -912,24 +910,24 @@ const ensureStoryCanBeReported = async ({ storyId, requester }) => {
     },
   });
 
-  if (!story) throw new Error("Khong tim thay truyen");
+  if (!story) throw new Error("Không tìm thấy truyện.");
 
   const canViewDraft = story.authorId === requester.id || isAdmin(requester);
   if (story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyen chua duoc xuat ban");
+    throw new Error("Truyện chưa được xuất bản.");
   }
   if (story.isHidden) {
-    throw new Error("Truyen da bi an boi quan tri vien");
+    throw new Error("Truyện đã bị ẩn bởi quản trị viên.");
   }
 
   return story;
 };
 
 const ensureChapterCanBeReported = async ({ chapterId, requester }) => {
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const normalizedChapterId = normalizeText(chapterId);
-  if (!normalizedChapterId) throw new Error("Thieu id chuong");
+  if (!normalizedChapterId) throw new Error("Thiếu thông tin chương.");
 
   const chapter = await prisma.chapter.findUnique({
     where: { id: normalizedChapterId },
@@ -947,20 +945,20 @@ const ensureChapterCanBeReported = async ({ chapterId, requester }) => {
     },
   });
 
-  if (!chapter) throw new Error("Khong tim thay chuong");
+  if (!chapter) throw new Error("Không tìm thấy chương.");
 
   const canViewDraft = chapter.story.authorId === requester.id || isAdmin(requester);
   if (chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyen chua duoc xuat ban");
+    throw new Error("Truyện chưa được xuất bản.");
   }
   if (chapter.story.isHidden && !isAdmin(requester) && chapter.story.authorId !== requester.id) {
-    throw new Error("Truyen da bi an boi quan tri vien");
+    throw new Error("Truyện đã bị ẩn bởi quản trị viên.");
   }
   if (chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chuong chua duoc xuat ban");
+    throw new Error("Chương chưa được xuất bản.");
   }
   if (chapter.isHidden) {
-    throw new Error("Chuong da bi an boi quan tri vien");
+    throw new Error("Chương đã bị ẩn bởi quản trị viên.");
   }
 
   return chapter;
@@ -969,7 +967,7 @@ const ensureChapterCanBeReported = async ({ chapterId, requester }) => {
 const reportChapterComment = async ({ commentId, requester, reason, description }) => {
   const comment = await ensureChapterCommentCanBeReported({ commentId, requester });
   if (comment.userId === requester.id) {
-    throw new Error("Ban khong the bao cao binh luan cua chinh minh");
+    throw new Error("Bạn không thể báo cáo bình luận của chính mình.");
   }
 
   const normalizedReason = validateCommentReportReason(reason);
@@ -1060,7 +1058,7 @@ const reportChapterComment = async ({ commentId, requester, reason, description 
       reason: reopenedReport.reason,
       status: reopenedReport.status,
       created_at: reopenedReport.createdAt,
-      message: "Bao cao binh luan da duoc mo lai",
+      message: "Chúng tôi đã mở lại báo cáo bình luận của bạn.",
     };
   }
 
@@ -1128,14 +1126,14 @@ const reportChapterComment = async ({ commentId, requester, reason, description 
     reason: report.reason,
     status: report.status,
     created_at: report.createdAt,
-    message: "Bao cao binh luan thanh cong",
+    message: "Đã gửi báo cáo bình luận. Cảm ơn bạn đã góp phần giữ cộng đồng an toàn.",
   };
 };
 
 const reportStory = async ({ storyId, requester, reason, description }) => {
   const story = await ensureStoryCanBeReported({ storyId, requester });
   if (story.authorId === requester.id) {
-    throw new Error("Ban khong the bao cao truyen cua chinh minh");
+    throw new Error("Bạn không thể báo cáo truyện của chính mình.");
   }
 
   const normalizedReason = validateContentReportReason(reason);
@@ -1226,7 +1224,7 @@ const reportStory = async ({ storyId, requester, reason, description }) => {
       reason: reopenedReport.reason,
       status: reopenedReport.status,
       created_at: reopenedReport.createdAt,
-      message: "Bao cao truyen da duoc mo lai",
+      message: "Chúng tôi đã mở lại báo cáo truyện của bạn.",
     };
   }
 
@@ -1294,14 +1292,14 @@ const reportStory = async ({ storyId, requester, reason, description }) => {
     reason: report.reason,
     status: report.status,
     created_at: report.createdAt,
-    message: "Bao cao truyen thanh cong",
+    message: "Đã gửi báo cáo truyện. Cảm ơn bạn đã góp phần giữ cộng đồng an toàn.",
   };
 };
 
 const reportChapter = async ({ chapterId, requester, reason, description }) => {
   const chapter = await ensureChapterCanBeReported({ chapterId, requester });
   if (chapter.story.authorId === requester.id) {
-    throw new Error("Ban khong the bao cao chuong cua chinh minh");
+    throw new Error("Bạn không thể báo cáo chương của chính mình.");
   }
 
   const normalizedReason = validateContentReportReason(reason);
@@ -1392,7 +1390,7 @@ const reportChapter = async ({ chapterId, requester, reason, description }) => {
       reason: reopenedReport.reason,
       status: reopenedReport.status,
       created_at: reopenedReport.createdAt,
-      message: "Bao cao chuong da duoc mo lai",
+      message: "Chúng tôi đã mở lại báo cáo chương của bạn.",
     };
   }
 
@@ -1460,7 +1458,7 @@ const reportChapter = async ({ chapterId, requester, reason, description }) => {
     reason: report.reason,
     status: report.status,
     created_at: report.createdAt,
-    message: "Bao cao chuong thanh cong",
+    message: "Đã gửi báo cáo chương. Cảm ơn bạn đã góp phần giữ cộng đồng an toàn.",
   };
 };
 
@@ -1517,7 +1515,7 @@ const listAdminReports = async ({ type, status, page, limit }) => {
 const getAdminReportDetail = async ({ type, reportId }) => {
   const normalizedType = validateAdminReportType(type);
   const normalizedReportId = normalizeText(reportId);
-  if (!normalizedReportId) throw new Error("Thieu id bao cao");
+  if (!normalizedReportId) throw new Error("Thiếu thông tin báo cáo.");
 
   const delegate = getAdminReportDelegate(normalizedType);
   const report = await delegate.findUnique({
@@ -1525,7 +1523,7 @@ const getAdminReportDetail = async ({ type, reportId }) => {
     include: getAdminReportInclude(normalizedType),
   });
 
-  if (!report) throw new Error("Khong tim thay bao cao");
+  if (!report) throw new Error("Không tìm thấy báo cáo.");
 
   return buildReportSummary({ type: normalizedType, report });
 };
@@ -1577,7 +1575,7 @@ const updateChapterCommentModeration = async ({
       },
     });
 
-    if (!existingReport) throw new Error("Khong tim thay bao cao");
+    if (!existingReport) throw new Error("Không tìm thấy báo cáo.");
 
     let ownerNotified = false;
 
@@ -1669,7 +1667,7 @@ const updateChapterCommentModeration = async ({
       body:
         status === "removed"
           ? "Quản trị viên đã gỡ bình luận bị báo cáo."
-          : "Quản trị viên đã xem xét nhưng không gỡ bình luận này.",
+          : "Quản trị viên đã xem xét nhưng chưa gỡ bình luận này.",
       linkUrl,
       meta: {
         audience: "reporter",
@@ -1694,7 +1692,7 @@ const updateChapterCommentModeration = async ({
       storyId: story?.id ?? null,
       chapterId: chapter?.id ?? null,
       type: "admin_message",
-      title: "Bình luận của bạn đã bị gỡ",
+      title: "Bình luận của bạn đã được gỡ sau khi xử lý",
       body: "Quản trị viên đã gỡ bình luận của bạn sau khi xem xét báo cáo.",
       linkUrl,
       meta: {
@@ -1765,7 +1763,7 @@ const updateChapterModeration = async ({
       },
     });
 
-    if (!existingReport) throw new Error("Khong tim thay bao cao");
+    if (!existingReport) throw new Error("Không tìm thấy báo cáo.");
 
     let ownerNotified = false;
 
@@ -1829,7 +1827,7 @@ const updateChapterModeration = async ({
       body:
         status === "action_taken"
           ? "Quản trị viên đã ẩn chương bị báo cáo."
-          : "Quản trị viên đã xem xét nhưng không ẩn chương này.",
+          : "Quản trị viên đã xem xét nhưng chưa ẩn chương này.",
       linkUrl,
       meta: {
         audience: "reporter",
@@ -1853,7 +1851,7 @@ const updateChapterModeration = async ({
       storyId: story?.id ?? null,
       chapterId: chapter?.id ?? null,
       type: "admin_message",
-      title: "Chương của bạn đã bị ẩn",
+      title: "Chương của bạn đã được tạm ẩn",
       body: "Quản trị viên đã ẩn chương của bạn sau khi xem xét báo cáo.",
       linkUrl,
       meta: {
@@ -1920,7 +1918,7 @@ const updateStoryModeration = async ({
       },
     });
 
-    if (!existingReport) throw new Error("Khong tim thay bao cao");
+    if (!existingReport) throw new Error("Không tìm thấy báo cáo.");
 
     let ownerNotified = false;
 
@@ -1979,7 +1977,7 @@ const updateStoryModeration = async ({
       body:
         status === "action_taken"
           ? "Quản trị viên đã ẩn truyện bị báo cáo."
-          : "Quản trị viên đã xem xét nhưng không ẩn truyện này.",
+          : "Quản trị viên đã xem xét nhưng chưa ẩn truyện này.",
       linkUrl,
       meta: {
         audience: "reporter",
@@ -2000,7 +1998,7 @@ const updateStoryModeration = async ({
       actorId: requester.id,
       storyId: story?.id ?? null,
       type: "admin_message",
-      title: "Truyện của bạn đã bị ẩn",
+      title: "Truyện của bạn đã được tạm ẩn",
       body: "Quản trị viên đã ẩn truyện của bạn sau khi xem xét báo cáo.",
       linkUrl,
       meta: {
@@ -2035,15 +2033,15 @@ const updateStoryModeration = async ({
 const updateAdminReportStatus = async ({ type, reportId, status, requester }) => {
   const normalizedType = validateAdminReportType(type);
   const normalizedReportId = normalizeText(reportId);
-  if (!normalizedReportId) throw new Error("Thieu id bao cao");
+  if (!normalizedReportId) throw new Error("Thiếu thông tin báo cáo.");
 
   const normalizedStatus = validateAdminReportStatus({
     type: normalizedType,
     status,
   });
-  if (!normalizedStatus) throw new Error("Thieu trang thai bao cao");
+  if (!normalizedStatus) throw new Error("Thiếu trạng thái báo cáo.");
 
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   if (normalizedType === "chapter_comment") {
     return updateChapterCommentModeration({
@@ -2072,7 +2070,7 @@ const updateAdminReportStatus = async ({ type, reportId, status, requester }) =>
     where: { id: normalizedReportId },
     select: { id: true },
   });
-  if (!existingReport) throw new Error("Khong tim thay bao cao");
+  if (!existingReport) throw new Error("Không tìm thấy báo cáo.");
 
   const report = await delegate.update({
     where: { id: normalizedReportId },
@@ -2100,7 +2098,7 @@ const getDefaultActionStatusForType = (type) =>
   type === "chapter_comment" ? "removed" : "action_taken";
 
 const processCriticalAdminReportCases = async ({ requester }) => {
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const criticalCases = await prisma.reportCase.findMany({
     where: {
@@ -2151,7 +2149,7 @@ const processCriticalAdminReportCases = async ({ requester }) => {
         message:
           error instanceof Error
             ? error.message
-            : "Khong the xu ly vu viec critical",
+            : "Failed to process critical report case.",
       });
     }
   }
@@ -2174,10 +2172,10 @@ const RESTORABLE_RESOLUTION_ACTIONS = new Set([
 const validateAppealReason = (reason) => {
   const normalizedReason = normalizeText(reason);
   if (normalizedReason.length < 20) {
-    throw new Error("Vui long nhap ly do khang nghi toi thieu 20 ky tu");
+    throw new Error("Vui lòng nhập lý do kháng nghị ít nhất 20 ký tự.");
   }
   if (normalizedReason.length > 1000) {
-    throw new Error("Ly do khang nghi toi da 1000 ky tu");
+    throw new Error("Lý do kháng nghị tối đa 1000 ký tự.");
   }
   return normalizedReason;
 };
@@ -2215,7 +2213,7 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
         },
       },
     });
-    if (!comment) throw new Error("Khong tim thay binh luan");
+    if (!comment) throw new Error("Không tìm thấy bình luận.");
     return {
       ownerId: comment.userId,
       isHidden: comment.isHidden,
@@ -2223,7 +2221,7 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
       chapterId: comment.chapterId,
       title: "Kháng nghị bình luận đã được tiếp nhận",
       body:
-        "AI sẽ xem xét lại ngữ cảnh trước khi quản trị viên đưa ra quyết định cuối cùng.",
+        "AI sẽ xem lại ngữ cảnh trước khi quản trị viên đưa ra quyết định cuối cùng.",
       linkUrl:
         comment.chapter?.story?.slug && comment.chapter?.id
           ? `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`
@@ -2262,7 +2260,7 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
         },
       },
     });
-    if (!chapter) throw new Error("Khong tim thay chuong");
+    if (!chapter) throw new Error("Không tìm thấy chương.");
     return {
       ownerId: chapter.story?.authorId ?? null,
       isHidden: chapter.isHidden,
@@ -2270,7 +2268,7 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
       chapterId: chapter.id,
       title: "Kháng nghị chương đã được tiếp nhận",
       body:
-        "AI sẽ xem xét lại nội dung chương và lý do kháng nghị trước khi quản trị viên quyết định.",
+        "AI sẽ rà soát nội dung chương và lý do kháng nghị trước khi quản trị viên quyết định.",
       linkUrl:
         chapter.story?.slug && chapter.id
           ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
@@ -2299,7 +2297,7 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
       isHidden: true,
     },
   });
-  if (!story) throw new Error("Khong tim thay truyen");
+  if (!story) throw new Error("Không tìm thấy truyện.");
   return {
     ownerId: story.authorId,
     isHidden: story.isHidden,
@@ -2307,7 +2305,7 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
     chapterId: null,
     title: "Kháng nghị truyện đã được tiếp nhận",
     body:
-      "AI sẽ xem xét lại nội dung truyện và lý do kháng nghị trước khi quản trị viên quyết định.",
+      "AI sẽ rà soát nội dung truyện và lý do kháng nghị trước khi quản trị viên quyết định.",
     linkUrl: story.slug ? `/stories/${story.slug}` : null,
     meta: {
       case_id: reportCase.id,
@@ -2323,8 +2321,8 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
 
 const submitReportCaseAppeal = async ({ caseId, requester, reason }) => {
   const normalizedCaseId = normalizeText(caseId);
-  if (!normalizedCaseId) throw new Error("Thieu id vu viec");
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!normalizedCaseId) throw new Error("Thiếu thông tin vụ việc báo cáo.");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const normalizedReason = validateAppealReason(reason);
   const now = new Date();
@@ -2344,21 +2342,21 @@ const submitReportCaseAppeal = async ({ caseId, requester, reason }) => {
       },
     });
 
-    if (!reportCase) throw new Error("Khong tim thay vu viec bao cao");
+    if (!reportCase) throw new Error("Không tìm thấy vụ việc báo cáo.");
     if (reportCase.status !== "resolved") {
-      throw new Error("Chi co the khang nghi vu viec da xu ly");
+      throw new Error("Chỉ có thể kháng nghị vụ việc đã được xử lý.");
     }
     if (reportCase.restoredAt) {
-      throw new Error("Noi dung nay da duoc khoi phuc");
+      throw new Error("Nội dung này đã được khôi phục rồi.");
     }
     if (!RESTORABLE_RESOLUTION_ACTIONS.has(reportCase.resolutionAction)) {
-      throw new Error("Quyet dinh nay khong ho tro khang nghi");
+      throw new Error("Quyết định này không hỗ trợ kháng nghị.");
     }
     if (reportCase.appealStatus === "pending") {
-      throw new Error("Khang nghi truoc do dang cho xu ly");
+      throw new Error("Bạn đã gửi kháng nghị trước đó và đang chờ xử lý.");
     }
     if (reportCase.appealStatus) {
-      throw new Error("Vu viec nay da co ket qua khang nghi");
+      throw new Error("Vụ việc này đã có kết quả kháng nghị.");
     }
 
     const ownerContext = await getReportCaseOwnerContext({
@@ -2366,10 +2364,10 @@ const submitReportCaseAppeal = async ({ caseId, requester, reason }) => {
       reportCase,
     });
     if (ownerContext.ownerId !== requester.id) {
-      throw new Error("Ban khong co quyen khang nghi vu viec nay");
+      throw new Error("Bạn không có quyền kháng nghị vụ việc này.");
     }
     if (!ownerContext.isHidden) {
-      throw new Error("Noi dung hien khong con bi an");
+      throw new Error("Nội dung hiện không còn bị ẩn.");
     }
 
     const updatedCase = await tx.reportCase.update({
@@ -2426,14 +2424,14 @@ const submitReportCaseAppeal = async ({ caseId, requester, reason }) => {
     appeal_status: result.appealStatus,
     appeal_reason: result.appealReason,
     appeal_submitted_at: result.appealSubmittedAt,
-    message: "Khang nghi da duoc gui",
+    message: "Đã gửi kháng nghị. Chúng tôi sẽ xem xét và phản hồi sớm nhất có thể.",
   };
 };
 
 const restoreAdminReportCase = async ({ caseId, requester }) => {
   const normalizedCaseId = normalizeText(caseId);
-  if (!normalizedCaseId) throw new Error("Thieu id vu viec");
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!normalizedCaseId) throw new Error("Thiếu thông tin vụ việc báo cáo.");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   let shouldRecomputeFeatured = false;
   let recomputeChapterId = null;
@@ -2452,20 +2450,20 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
       },
     });
 
-    if (!reportCase) throw new Error("Khong tim thay vu viec bao cao");
+    if (!reportCase) throw new Error("Không tìm thấy vụ việc báo cáo.");
     if (reportCase.status !== "resolved") {
-      throw new Error("Chi co the khoi phuc vu viec da xu ly");
+      throw new Error("Chỉ có thể khôi phục vụ việc đã được xử lý.");
     }
     if (reportCase.restoredAt) {
-      throw new Error("Vu viec nay da duoc khoi phuc truoc do");
+      throw new Error("Vụ việc này đã được khôi phục trước đó.");
     }
     if (!RESTORABLE_RESOLUTION_ACTIONS.has(reportCase.resolutionAction)) {
-      throw new Error("Vu viec nay khong co noi dung can khoi phuc");
+      throw new Error("Vụ việc này không có nội dung cần khôi phục.");
     }
 
     const expectedType = getRestorableTargetType(reportCase.resolutionAction);
     if (expectedType !== reportCase.targetType) {
-      throw new Error("Du lieu vu viec khong khop voi hanh dong khoi phuc");
+      throw new Error("Thông tin vụ việc không khớp với thao tác khôi phục.");
     }
 
     if (reportCase.targetType === "chapter_comment") {
@@ -2494,14 +2492,14 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
           },
         },
       });
-      if (!comment) throw new Error("Khong tim thay binh luan can khoi phuc");
+      if (!comment) throw new Error("Không tìm thấy bình luận cần khôi phục.");
       notificationPayload = {
         recipientId: comment.userId,
         storyId: comment.chapter?.story?.id ?? null,
         chapterId: comment.chapterId,
         title: "Bình luận của bạn đã được khôi phục",
         body:
-          "Quản trị viên đã xem xét lại và hiển thị bình luận của bạn. Cảm ơn bạn đã kiên nhẫn trong lúc nội dung được rà soát.",
+          "Quản trị viên đã xem xét lại và hiển thị lại bình luận của bạn. Cảm ơn bạn đã kiên nhẫn trong lúc nội dung được rà soát.",
         linkUrl:
           comment.chapter?.story?.slug && comment.chapter?.id
             ? `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`
@@ -2569,14 +2567,14 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
           },
         },
       });
-      if (!chapter) throw new Error("Khong tim thay chuong can khoi phuc");
+      if (!chapter) throw new Error("Không tìm thấy chương cần khôi phục.");
       notificationPayload = {
         recipientId: chapter.story?.authorId ?? null,
         storyId: chapter.story?.id ?? null,
         chapterId: chapter.id,
         title: "Chương của bạn đã được khôi phục",
         body:
-          "Chương đã được hiển thị trở lại sau khi quản trị viên xem xét lại vụ việc.",
+          "Chương đã hiển thị trở lại sau khi quản trị viên xem xét lại vụ việc.",
         linkUrl:
           chapter.story?.slug && chapter.id
             ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
@@ -2614,14 +2612,14 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
           authorId: true,
         },
       });
-      if (!story) throw new Error("Khong tim thay truyen can khoi phuc");
+      if (!story) throw new Error("Không tìm thấy truyện cần khôi phục.");
       notificationPayload = {
         recipientId: story.authorId,
         storyId: story.id,
         chapterId: null,
         title: "Truyện của bạn đã được khôi phục",
         body:
-          "Truyện đã được hiển thị trở lại sau khi quản trị viên xem xét lại vụ việc.",
+          "Truyện đã hiển thị trở lại sau khi quản trị viên xem xét lại vụ việc.",
         linkUrl: story.slug ? `/stories/${story.slug}` : null,
         meta: {
           case_id: reportCase.id,
@@ -2673,7 +2671,7 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
   }
 
   if (!transactionResult.report) {
-    throw new Error("Khong tim thay bao cao sau khi khoi phuc");
+    throw new Error("Không tìm thấy báo cáo sau khi khôi phục.");
   }
 
   if (
@@ -2700,17 +2698,17 @@ const getReportSummaryForCase = async ({ type, caseId }) => {
     orderBy: { updatedAt: "desc" },
     include: getAdminReportInclude(type),
   });
-  if (!report) throw new Error("Khong tim thay bao cao trong vu viec");
+  if (!report) throw new Error("Không tìm thấy báo cáo trong vụ việc.");
   return buildReportSummary({ type, report });
 };
 
 const resolveReportCaseAppeal = async ({ caseId, action, requester }) => {
   const normalizedCaseId = normalizeText(caseId);
   const normalizedAction = normalizeText(action).toLowerCase();
-  if (!normalizedCaseId) throw new Error("Thieu id vu viec");
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!normalizedCaseId) throw new Error("Thiếu thông tin vụ việc báo cáo.");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
   if (!["accept", "dismiss"].includes(normalizedAction)) {
-    throw new Error("Hanh dong khang nghi khong hop le");
+    throw new Error("Thao tác kháng nghị không hợp lệ.");
   }
 
   const reportCase = await prisma.reportCase.findUnique({
@@ -2724,9 +2722,9 @@ const resolveReportCaseAppeal = async ({ caseId, action, requester }) => {
     },
   });
 
-  if (!reportCase) throw new Error("Khong tim thay vu viec bao cao");
+  if (!reportCase) throw new Error("Không tìm thấy vụ việc báo cáo.");
   if (reportCase.appealStatus !== "pending") {
-    throw new Error("Vu viec nay khong co khang nghi dang cho xu ly");
+    throw new Error("Vụ việc này không có kháng nghị đang chờ xử lý.");
   }
 
   if (normalizedAction === "accept") {
@@ -2755,7 +2753,7 @@ const resolveReportCaseAppeal = async ({ caseId, action, requester }) => {
         targetId: true,
       },
     });
-    if (!currentCase) throw new Error("Khong tim thay vu viec bao cao");
+    if (!currentCase) throw new Error("Không tìm thấy vụ việc báo cáo.");
 
     const ownerContext = await getReportCaseOwnerContext({
       db: tx,
@@ -2813,3 +2811,5 @@ module.exports = {
   reportChapter,
   reportChapterComment,
 };
+
+

@@ -63,7 +63,7 @@ const refresh = async (req, res) => {
       getRefreshTokenFromCookie(req) || req.body?.refresh_token || null;
 
     if (!refreshToken) {
-      return res.status(400).json({ message: "Thiếu refresh token" });
+      return res.status(400).json({ message: "Thiếu refresh token, vui lòng đăng nhập lại." });
     }
 
     const result = await authService.refresh(refreshToken);
@@ -103,7 +103,7 @@ const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
-      return res.status(400).json({ message: "Email la bat buoc" });
+      return res.status(400).json({ message: "Vui lòng nhập email." });
     }
 
     const result = await authService.forgotPassword(email);
@@ -117,7 +117,7 @@ const verifyResetOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
     if (!email || !otp) {
-      return res.status(400).json({ message: "Email va OTP la bat buoc" });
+      return res.status(400).json({ message: "Vui lòng nhập email và mã OTP." });
     }
 
     const result = await authService.verifyResetOtp({ email, otp });
@@ -132,7 +132,7 @@ const resetPassword = async (req, res) => {
     const { email, otp, new_password: newPassword } = req.body;
     if (!email || !otp || !newPassword) {
       return res.status(400).json({
-        message: "Email, OTP va mat khau moi la bat buoc",
+        message: "Vui lòng nhập email, OTP và mật khẩu mới.",
       });
     }
 

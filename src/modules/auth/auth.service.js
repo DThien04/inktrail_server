@@ -1,4 +1,4 @@
-const bcrypt = require("bcryptjs");
+﻿const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const prisma = require("../../config/prisma");
@@ -95,7 +95,7 @@ const formatUser = (user) => ({
 
 const register = async ({ email, password, displayName }) => {
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) throw new Error("Email đã được sử dụng");
+  if (existing) throw new Error("Email này đã được đăng ký. Bạn có thể đăng nhập hoặc chọn email khác.");
 
   const hashedPassword = await bcrypt.hash(password, 12);
 
@@ -115,10 +115,10 @@ const register = async ({ email, password, displayName }) => {
 
 const login = async ({ email, password }) => {
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error("Email hoặc mật khẩu không đúng");
+  if (!user) throw new Error("Email hoặc mật khẩu chưa đúng.");
 
   const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) throw new Error("Email hoặc mật khẩu không đúng");
+  if (!isMatch) throw new Error("Email hoặc mật khẩu chưa đúng.");
 
   const { accessToken, refreshToken } = generateTokens(user);
   await saveRefreshToken(user.id, refreshToken);
@@ -135,7 +135,7 @@ const refresh = async (token) => {
   try {
     decoded = jwt.verify(token, jwtConfig.refreshSecret);
   } catch {
-    throw new Error("Refresh token không hợp lệ");
+    throw new Error("Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại.");
   }
 
   const stored = await prisma.refreshToken.findFirst({
@@ -144,12 +144,12 @@ const refresh = async (token) => {
       expiresAt: { gt: new Date() },
     },
   });
-  if (!stored) throw new Error("Refresh token đã hết hạn");
+  if (!stored) throw new Error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.");
 
   const user = await prisma.user.findUnique({
     where: { id: decoded.id },
   });
-  if (!user) throw new Error("Người dùng không tồn tại");
+  if (!user) throw new Error("Tài khoản không còn tồn tại, vui lòng đăng nhập lại.");
 
   await prisma.refreshToken.delete({ where: { token } });
   const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
@@ -168,11 +168,11 @@ const logout = async (token) => {
 
 const forgotPassword = async (rawEmail) => {
   const email = normalizeEmail(rawEmail);
-  if (!email) throw new Error("Email không hợp lệ");
+  if (!email) throw new Error("Vui lòng nhập email.");
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    return { message: "Nếu email tồn tại, mã OTP đã được gửi" };
+    return { message: "Nếu email tồn tại trong hệ thống, mã OTP đã được gửi tới hộp thư của bạn." };
   }
 
   const otp = String(crypto.randomInt(100000, 1000000));
@@ -204,29 +204,29 @@ const forgotPassword = async (rawEmail) => {
 
   await sendMail({
     to: user.email,
-    subject: "InkTrail - Mã OTP đặt lại mật khẩu",
+    subject: "InkTrail — Mã OTP đặt lại mật khẩu",
     text,
     html,
   });
 
-  return { message: "Nếu email tồn tại, mã OTP đã được gửi" };
+  return { message: "Nếu email tồn tại trong hệ thống, mã OTP đã được gửi tới hộp thư của bạn." };
 };
 
 const verifyResetOtp = async ({ email: rawEmail, otp }) => {
   const email = normalizeEmail(rawEmail);
-  if (!email || !otp) throw new Error("Email và OTP là bắt buộc");
+  if (!email || !otp) throw new Error("Vui lòng nhập đủ email và mã OTP.");
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error("OTP không hợp lệ hoặc đã hết hạn");
+  if (!user) throw new Error("Mã OTP chưa đúng hoặc đã hết hạn.");
 
   const record = await getActivePasswordResetOtp({
     email,
     userId: user.id,
   });
 
-  if (!record) throw new Error("OTP không hợp lệ hoặc đã hết hạn");
+  if (!record) throw new Error("Mã OTP chưa đúng hoặc đã hết hạn.");
   if (record.attemptCount >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
-    throw new Error("OTP đã bị khóa do nhập sai quá nhiều lần");
+    throw new Error("Bạn đã nhập sai OTP quá nhiều lần. Vui lòng yêu cầu gửi lại mã.");
   }
 
   const matched = record.otpHash === hashOtp(otp);
@@ -235,11 +235,11 @@ const verifyResetOtp = async ({ email: rawEmail, otp }) => {
       where: { id: record.id },
       data: { attemptCount: { increment: 1 } },
     });
-    throw new Error("OTP không hợp lệ hoặc đã hết hạn");
+    throw new Error("Mã OTP chưa đúng, vui lòng thử lại.");
   }
 
   return {
-    message: "OTP hợp lệ",
+    message: "OTP hợp lệ.",
     expires_at: record.expiresAt,
   };
 };
@@ -247,23 +247,23 @@ const verifyResetOtp = async ({ email: rawEmail, otp }) => {
 const resetPassword = async ({ email: rawEmail, otp, newPassword }) => {
   const email = normalizeEmail(rawEmail);
   if (!email || !otp || !newPassword) {
-    throw new Error("Email, OTP và mật khẩu mới là bắt buộc");
+    throw new Error("Vui lòng nhập đủ email, OTP và mật khẩu mới.");
   }
   if (newPassword.length < 6) {
-    throw new Error("Mật khẩu mới tối thiểu 6 ký tự");
+    throw new Error("Mật khẩu mới cần ít nhất 6 ký tự.");
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error("OTP không hợp lệ hoặc đã hết hạn");
+  if (!user) throw new Error("Mã OTP chưa đúng hoặc đã hết hạn.");
 
   const record = await getActivePasswordResetOtp({
     email,
     userId: user.id,
   });
 
-  if (!record) throw new Error("OTP không hợp lệ hoặc đã hết hạn");
+  if (!record) throw new Error("Mã OTP chưa đúng hoặc đã hết hạn.");
   if (record.attemptCount >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
-    throw new Error("OTP đã bị khóa do nhập sai quá nhiều lần");
+    throw new Error("Bạn đã nhập sai OTP quá nhiều lần. Vui lòng yêu cầu gửi lại mã.");
   }
 
   const matched = record.otpHash === hashOtp(otp);
@@ -272,7 +272,7 @@ const resetPassword = async ({ email: rawEmail, otp, newPassword }) => {
       where: { id: record.id },
       data: { attemptCount: { increment: 1 } },
     });
-    throw new Error("OTP không hợp lệ hoặc đã hết hạn");
+    throw new Error("Mã OTP chưa đúng, vui lòng thử lại.");
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 12);
@@ -291,7 +291,7 @@ const resetPassword = async ({ email: rawEmail, otp, newPassword }) => {
     }),
   ]);
 
-  return { message: "Đặt lại mật khẩu thành công" };
+  return { message: "Đặt lại mật khẩu thành công." };
 };
 
 module.exports = {
@@ -303,3 +303,4 @@ module.exports = {
   verifyResetOtp,
   resetPassword,
 };
+

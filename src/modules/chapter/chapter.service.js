@@ -1,11 +1,12 @@
-const crypto = require("crypto");
+﻿const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
 const {
   emitChapterComment,
   emitChapterCommentRemoved,
 } = require("../../realtime/socket");
-const { moderateCommentText, moderateText } = require("../../utils/moderation");
+const { moderateText } = require("../../utils/moderation");
+const { evaluateCommentPublishRules } = require("../comment/comment-publish-rules");
 const {
   recomputeChapterFeaturedComment,
   getChapterFeaturedCommentId,
@@ -13,14 +14,6 @@ const {
 
 const ALLOWED_CHAPTER_STATUSES = new Set(["draft", "published"]);
 const CHAPTER_COMMENT_NOTIFICATION_TYPE = "chapter_commented";
-const BLOCKED_COMMENT_CATEGORIES = new Set([
-  "harassment",
-  "hate",
-  "sexual",
-  "violence",
-  "self_harm",
-]);
-const COMMENT_BACKGROUND_MODERATION_TIMEOUT_MS = 15000;
 const CHAPTER_BACKGROUND_MODERATION_TIMEOUT_MS = 18000;
 const MIN_CHAPTER_WORD_COUNT = 500;
 const CHAPTER_BLOCKED_CATEGORIES = new Set([
@@ -45,7 +38,7 @@ const countWords = (value) => {
 const ensureChapterContentMinWords = (content) => {
   const words = countWords(content);
   if (words < MIN_CHAPTER_WORD_COUNT) {
-    throw new Error(`N?i dung chuong ph?i c� �t nh?t ${MIN_CHAPTER_WORD_COUNT} t?`);
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
 };
 const buildContentHash = (value) =>
@@ -91,21 +84,21 @@ const ensureCanManageStory = ({ story, requester }) => {
   const isOwner = story.authorId === requester.id;
   const isAdmin = requester.role === "admin";
   if (!isOwner && !isAdmin) {
-    throw new Error("Bạn không có quyền thao tác chương của truyện này");
+    throw new Error("Không tìm thấy nội dung bạn cần.");
   }
 };
 
 const normalizeStatus = (value, fallback = "draft") => {
   const normalized = normalizeText(value) || fallback;
   if (!ALLOWED_CHAPTER_STATUSES.has(normalized)) {
-    throw new Error("Trạng thái chương không hợp lệ");
+    throw new Error("Không tìm thấy nội dung bạn cần.");
   }
   return normalized;
 };
 
 const ensureChapterCanBeLiked = async ({ chapterId, requester }) => {
   const normalizedChapterId = normalizeText(chapterId);
-  if (!normalizedChapterId) throw new Error("Thiáº¿u id chÆ°Æ¡ng");
+  if (!normalizedChapterId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
 
   const chapter = await prisma.chapter.findUnique({
     where: { id: normalizedChapterId },
@@ -122,25 +115,25 @@ const ensureChapterCanBeLiked = async ({ chapterId, requester }) => {
       },
     },
   });
-  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   const isOwner = requester?.id && chapter.story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
 
   if (chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyá»‡n chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
   if (chapter.story.isHidden && !isAdmin) {
-    throw new Error("Truyen da bi an boi quan tri vien");
+    throw new Error("Truyện đã bị ẩn bởi quản trị viên.");
   }
 
   if (chapter.status !== "published" && !canViewDraft) {
-    throw new Error("ChÆ°Æ¡ng chÆ°a Ä‘Æ°á»£c xuáº¥t báº£n");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
 
   if (chapter.isHidden && !isAdmin) {
-    throw new Error("Chuong da bi an boi quan tri vien");
+    throw new Error("Chương đã bị ẩn bởi quản trị viên.");
   }
 
   return chapter;
@@ -148,7 +141,7 @@ const ensureChapterCanBeLiked = async ({ chapterId, requester }) => {
 
 const ensureChapterCanBeCommented = async ({ chapterId, requester }) => {
   const normalizedChapterId = normalizeText(chapterId);
-  if (!normalizedChapterId) throw new Error("Thiếu id chương");
+  if (!normalizedChapterId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
 
   const chapter = await prisma.chapter.findUnique({
     where: { id: normalizedChapterId },
@@ -165,25 +158,25 @@ const ensureChapterCanBeCommented = async ({ chapterId, requester }) => {
       },
     },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   const isOwner = requester?.id && chapter.story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
 
   if (chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyện chưa được xuất bản");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
   if (chapter.story.isHidden && !isAdmin) {
-    throw new Error("Truyen da bi an boi quan tri vien");
+    throw new Error("Truyện đã bị ẩn bởi quản trị viên.");
   }
 
   if (chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chương chưa được xuất bản");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
 
   if (chapter.isHidden && !isAdmin) {
-    throw new Error("Chuong da bi an boi quan tri vien");
+    throw new Error("Chương đã bị ẩn bởi quản trị viên.");
   }
 
   return chapter;
@@ -218,40 +211,11 @@ const formatChapterComment = (comment, requester, featuredCommentId = null) => (
 
 const validateCommentContent = (content) => {
   const normalizedContent = normalizeText(content);
-  if (!normalizedContent) throw new Error("Nội dung bình luận không được để trống");
+  if (!normalizedContent) throw new Error("Không tìm thấy nội dung bạn cần.");
   if (normalizedContent.length > 2000) {
-    throw new Error("Nội dung bình luận tối đa 2000 ký tự");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
   return normalizedContent;
-};
-
-const shouldBlockModeratedComment = (moderationResult) => {
-  if (!moderationResult?.flagged) return false;
-
-  const categories = Array.isArray(moderationResult.categories)
-    ? moderationResult.categories
-    : [];
-  const hasBlockedCategory = categories.some((category) =>
-    BLOCKED_COMMENT_CATEGORIES.has(category),
-  );
-
-  return Boolean(
-    hasBlockedCategory ||
-      moderationResult.severity === "high" ||
-      moderationResult.severity === "critical" ||
-      moderationResult.maxScore >= 0.7,
-  );
-};
-
-const measureAsync = async (label, fn) => {
-  const startedAt = Date.now();
-  const result = await fn();
-  const durationMs = Date.now() - startedAt;
-  return {
-    label,
-    result,
-    durationMs,
-  };
 };
 
 const shouldBlockModeratedChapter = (moderationResult) => {
@@ -291,8 +255,8 @@ const notifyAdminsAboutChapterAiFlag = async ({
         storyId: story.id,
         chapterId: chapter.id,
         type: "admin_message",
-        title: "AI g?n c? chuong c?a t�c gi?",
-        body: `Chuong ${chapter.chapterNumber} c?a truy?n ${story.title} b? AI g?n c? v� d� t? ?n.`,
+        title: "AI gắn cờ chương của tác giả",
+        body: `Chương ${chapter.chapterNumber} của truyện ${story.title} bị AI gắn cờ và đã tự ẩn.`,
         linkUrl: story.slug ? `/stories/${story.slug}/chapters/${chapter.id}` : null,
         meta: {
           target_type: "chapter",
@@ -365,7 +329,7 @@ const processChapterModeration = async ({
         moderationConfidence: moderationResult.maxScore,
         moderationReason:
           moderationResult.reason ||
-          "N?i dung chuong kh�ng vu?t qua bu?c ki?m duy?t t? d?ng.",
+          "Nội dung chương không vượt qua bước kiểm duyệt tự động.",
         status: "draft",
         publishedAt: null,
         isHidden: true,
@@ -373,7 +337,7 @@ const processChapterModeration = async ({
         hiddenById: null,
         hiddenReason:
           moderationResult.reason ||
-          "N?i dung chuong kh�ng vu?t qua bu?c ki?m duy?t t? d?ng.",
+          "Nội dung chương không vượt qua bước kiểm duyệt tự động.",
       },
     });
     if (updated.count < 1) return;
@@ -384,9 +348,9 @@ const processChapterModeration = async ({
       storyId: chapter.story.id,
       chapterId: chapter.id,
       type: "admin_message",
-      title: "Chuong d� b? AI t?m ?n d? r� so�t",
+      title: "Chương đã bị AI tạm ẩn để rà soát",
       body:
-        "N?i dung chuong c� d?u hi?u vi ph?m ti�u chu?n c?ng d?ng. B?n c� th? ch?nh s?a n?i dung v� dang l?i.",
+        "Nội dung chương có dấu hiệu vi phạm tiêu chuẩn cộng đồng. Bạn có thể chỉnh sửa nội dung và đăng lại.",
       linkUrl: chapter.story.slug
         ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
         : null,
@@ -480,25 +444,22 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
     if (!comment) return;
     if (comment.moderationStatus !== COMMENT_MODERATION_STATUS.pending) return;
 
-    const moderationStep = await measureAsync("moderation", () =>
-      moderateCommentText(comment.content, {
-        timeoutMs: COMMENT_BACKGROUND_MODERATION_TIMEOUT_MS,
-      }),
-    );
-    const moderationResult = moderationStep.result;
-    const blocked = shouldBlockModeratedComment(moderationResult);
+    const violations = evaluateCommentPublishRules({
+      content: comment.content,
+      normalizeText,
+    });
+    const blocked = violations.length > 0;
+    const rejectReason = blocked ? violations[0].message : null;
+    const ruleCodes = blocked ? violations.map((v) => v.code) : [];
 
     console.log(
-      "[comment-async-moderation]",
+      "[comment-moderation]",
       JSON.stringify({
         comment_id: commentId,
         attempt,
         total_ms: Date.now() - flowStartedAt,
-        moderation_ms: moderationStep.durationMs,
-        flagged: moderationResult.flagged,
-        categories: moderationResult.categories,
-        max_score: moderationResult.maxScore,
         blocked,
+        rule_codes: ruleCodes,
       }),
     );
 
@@ -511,14 +472,14 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
         data: {
           moderationStatus: COMMENT_MODERATION_STATUS.rejected,
           moderationCheckedAt: new Date(),
-          moderationCategories: moderationResult.categories,
-          moderationConfidence: moderationResult.maxScore,
+          moderationCategories: null,
+          moderationConfidence: null,
           moderationReason:
-            moderationResult.reason ||
-            "B�nh lu?n kh�ng vu?t qua bu?c ki?m duy?t n?i dung.",
+            rejectReason || "Bình luận không vượt qua bước kiểm duyệt nội dung.",
           isHidden: true,
           hiddenAt: new Date(),
-          hiddenReason: "B�nh lu?n kh�ng vu?t qua bu?c ki?m duy?t n?i dung.",
+          hiddenReason:
+            rejectReason || "Bình luận không vượt qua bước kiểm duyệt nội dung.",
         },
       });
 
@@ -528,8 +489,8 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
           chapter_id: comment.chapterId,
           user_id: comment.userId,
           reason:
-            moderationResult.reason ||
-            "B�nh lu?n kh�ng vu?t qua bu?c ki?m duy?t n?i dung.",
+            rejectReason ||
+            "Bình luận không vượt qua bước kiểm duyệt nội dung.",
         });
       }
 
@@ -539,17 +500,17 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
         storyId: comment.chapter.story.id,
         chapterId: comment.chapter.id,
         type: "admin_message",
-        title: "B�nh lu?n n�y kh�ng th? hi?n th? v� ch?a n?i dung kh�ng ph� h?p",
+        title: "Bình luận này không thể hiển thị vì chứa nội dung không phù hợp",
         body:
-          "B�nh lu?n b?n v?a g?i kh�ng du?c dang v� ch?a n?i dung kh�ng ph� h?p v?i ti�u chu?n c?ng d?ng.",
+          rejectReason ||
+          "Bình luận bạn vừa gửi không được đăng vì chứa nội dung không phù hợp với tiêu chuẩn cộng đồng.",
         linkUrl: `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`,
         meta: {
           target_type: "chapter_comment",
           moderation_status: "rejected",
           comment_id: comment.id,
           comment_preview: String(comment.content || "").slice(0, 120),
-          categories: moderationResult.categories,
-          confidence: moderationResult.maxScore,
+          rule_codes: ruleCodes,
         },
       });
       return;
@@ -586,9 +547,9 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
         data: {
           moderationStatus: COMMENT_MODERATION_STATUS.approved,
           moderationCheckedAt: new Date(),
-          moderationCategories: moderationResult.categories,
-          moderationConfidence: moderationResult.maxScore,
-          moderationReason: moderationResult.reason || null,
+          moderationCategories: null,
+          moderationConfidence: null,
+          moderationReason: null,
         },
         include: {
           stats: {
@@ -652,7 +613,7 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
     }
   } catch (error) {
     console.error(
-      "[comment-async-moderation:error]",
+      "[comment-moderation:error]",
       JSON.stringify({
         comment_id: commentId,
         attempt,
@@ -689,16 +650,16 @@ const createChapter = async ({
     where: { id: storyId },
     select: { id: true, authorId: true },
   });
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   ensureCanManageStory({ story, requester });
 
   const normalizedTitle = normalizeText(title);
-  if (!normalizedTitle) throw new Error("Tiêu đề chương không được để trống");
-  if (normalizedTitle.length > 255) throw new Error("Tiêu đề chương tối đa 255 ký tự");
+  if (!normalizedTitle) throw new Error("Không tìm thấy nội dung bạn cần.");
+  if (normalizedTitle.length > 255) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
 
   const normalizedContent = normalizeText(content);
-  if (!normalizedContent) throw new Error("Nội dung chương không được để trống");
+  if (!normalizedContent) throw new Error("Không tìm thấy nội dung bạn cần.");
   ensureChapterContentMinWords(normalizedContent);
 
   const maxChapterNumber = await prisma.chapter.aggregate({
@@ -731,16 +692,16 @@ const getChaptersByStory = async ({ storyId, requester }) => {
     where: { id: storyId },
     select: { id: true, authorId: true, status: true, isHidden: true },
   });
-  if (!story) throw new Error("Không tìm thấy truyện");
+  if (!story) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   const isOwner = requester?.id && story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
   if (story.status !== "published" && !canViewDraft) {
-    throw new Error("Truy?n chua du?c xu?t b?n");
+    throw new Error("Truyện chưa được xuất bản.");
   }
   if (story.isHidden && !canViewDraft) {
-    throw new Error("Truyen da bi an boi quan tri vien");
+    throw new Error("Truyện đã bị ẩn bởi quản trị viên.");
   }
 
   const chapters = await prisma.chapter.findMany({
@@ -798,16 +759,16 @@ const getChapterDetail = async ({ chapterId, requester }) => {
       },
     },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   const isOwner = requester?.id && chapter.story.authorId === requester.id;
   const isAdmin = requester?.role === "admin";
   const canViewDraft = Boolean(isOwner || isAdmin);
   if (chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chương chưa được xuất bản");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
   if (chapter.isHidden && !isAdmin) {
-    throw new Error("Chuong da bi an boi quan tri vien");
+    throw new Error("Chương đã bị ẩn bởi quản trị viên.");
   }
 
   return {
@@ -918,7 +879,7 @@ const listChapterComments = async ({ chapterId, requester, sort, limit }) => {
 
 const ensureChapterCommentCanBeLiked = async ({ commentId, requester }) => {
   const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thiếu id bình luận");
+  if (!normalizedCommentId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
 
   const comment = await prisma.chapterComment.findUnique({
     where: { id: normalizedCommentId },
@@ -939,15 +900,15 @@ const ensureChapterCommentCanBeLiked = async ({ commentId, requester }) => {
     },
   });
 
-  if (!comment) throw new Error("Không tìm thấy bình luận");
+  if (!comment) throw new Error("Không tìm thấy nội dung bạn cần.");
   if (comment.isHidden && requester?.role !== "admin") {
-    throw new Error("Binh luan da bi go");
+    throw new Error("Bình luận này đã bị gỡ.");
   }
   if (
     comment.moderationStatus !== COMMENT_MODERATION_STATUS.approved &&
     requester?.role !== "admin"
   ) {
-    throw new Error("Binh luan dang duoc kiem duyet");
+    throw new Error("Bình luận đang được kiểm duyệt.");
   }
 
   const isOwner = requester?.id && comment.chapter.story.authorId === requester.id;
@@ -955,21 +916,21 @@ const ensureChapterCommentCanBeLiked = async ({ commentId, requester }) => {
   const canViewDraft = Boolean(isOwner || isAdmin);
 
   if (comment.chapter.story.status !== "published" && !canViewDraft) {
-    throw new Error("Truyện chưa được xuất bản");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
 
   if (comment.chapter.status !== "published" && !canViewDraft) {
-    throw new Error("Chương chưa được xuất bản");
+    throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   }
 
   return comment;
 };
 
 const ensureChapterCommentCanBeManaged = async ({ commentId, requester }) => {
-  if (!requester?.id) throw new Error("Chua dang nhap");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const normalizedCommentId = normalizeText(commentId);
-  if (!normalizedCommentId) throw new Error("Thieu id binh luan");
+  if (!normalizedCommentId) throw new Error("Thiếu thông tin bình luận.");
 
   const comment = await prisma.chapterComment.findUnique({
     where: { id: normalizedCommentId },
@@ -1010,27 +971,27 @@ const ensureChapterCommentCanBeManaged = async ({ commentId, requester }) => {
     },
   });
 
-  if (!comment) throw new Error("Khong tim thay binh luan");
+  if (!comment) throw new Error("Không tìm thấy bình luận.");
 
   const isCommentOwner = comment.userId === requester.id;
   const isStoryOwner = comment.chapter.story.authorId === requester.id;
   const isAdmin = requester.role === "admin";
   if (!isCommentOwner && !isStoryOwner && !isAdmin) {
-    throw new Error("Ban khong co quyen thao tac binh luan nay");
+    throw new Error("Bạn không có quyền thao tác trên bình luận này.");
   }
   if (
     comment.isHidden &&
     !isAdmin &&
     comment.moderationStatus !== COMMENT_MODERATION_STATUS.rejected
   ) {
-    throw new Error("Binh luan da bi go boi quan tri vien");
+    throw new Error("Bình luận đã bị gỡ bởi quản trị viên.");
   }
 
   return comment;
 };
 
 const createChapterComment = async ({ chapterId, requester, content }) => {
-  if (!requester?.id) throw new Error("Chưa đăng nhập");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
 
   const chapter = await ensureChapterCanBeCommented({ chapterId, requester });
   const normalizedContent = validateCommentContent(content);
@@ -1388,7 +1349,7 @@ const getChapterFeaturedComment = async ({ chapterId, requester }) => {
 
 const recomputeChapterFeaturedByChapterId = async ({ chapterId, requester }) => {
   const normalizedChapterId = normalizeText(chapterId);
-  if (!normalizedChapterId) throw new Error("Thiếu id chương");
+  if (!normalizedChapterId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
 
   const chapter = await prisma.chapter.findUnique({
     where: { id: normalizedChapterId },
@@ -1398,7 +1359,7 @@ const recomputeChapterFeaturedByChapterId = async ({ chapterId, requester }) => 
       },
     },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
   ensureCanManageStory({ story: chapter.story, requester });
 
   const featuredCommentId = await prisma.$transaction((tx) =>
@@ -1573,11 +1534,11 @@ const updateChapter = async ({
     where: { id: chapterId },
     include: { story: { select: { id: true, authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   ensureCanManageStory({ story: chapter.story, requester });
   if (chapter.status === "published") {
-    throw new Error("Chuong d� xu?t b?n, h�y dua v? b?n nh�p tru?c khi ch?nh s?a");
+    throw new Error("Chương đã xuất bản, không thể chỉnh sửa như bản nháp.");
   }
 
   const data = {};
@@ -1585,22 +1546,22 @@ const updateChapter = async ({
 
   if (title !== undefined) {
     const normalizedTitle = normalizeText(title);
-    if (!normalizedTitle) throw new Error("Tiêu đề chương không được để trống");
+    if (!normalizedTitle) throw new Error("Không tìm thấy nội dung bạn cần.");
     if (normalizedTitle.length > 255) {
-      throw new Error("Tiêu đề chương tối đa 255 ký tự");
+      throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
     }
     data.title = normalizedTitle;
   }
 
   if (content !== undefined) {
     const normalizedContent = normalizeText(content);
-    if (!normalizedContent) throw new Error("Nội dung chương không được để trống");
+    if (!normalizedContent) throw new Error("Không tìm thấy nội dung bạn cần.");
     ensureChapterContentMinWords(normalizedContent);
     data.content = normalizedContent;
   }
 
   if (!Object.keys(data).length) {
-    throw new Error("Không có dữ liệu hợp lệ để cập nhật");
+    throw new Error("Bạn chưa thay đổi thông tin nào để cập nhật.");
   }
 
   if (
@@ -1627,7 +1588,7 @@ const publishChapter = async ({ chapterId, requester }) => {
     where: { id: chapterId },
     include: { story: { select: { id: true, authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   ensureCanManageStory({ story: chapter.story, requester });
   const nextModerationHash = buildChapterModerationHash(chapter);
@@ -1638,7 +1599,7 @@ const publishChapter = async ({ chapterId, requester }) => {
     chapter.lastRejectedContentHash === nextModerationHash
   ) {
     throw new Error(
-      "Chuong dang b? t? ch?i. H�y ch?nh s?a n?i dung tru?c khi xu?t b?n l?i",
+      "Chương đang bị từ chối. Hãy chỉnh sửa nội dung trước khi xuất bản lại",
     );
   }
 
@@ -1692,7 +1653,7 @@ const unpublishChapter = async ({ chapterId, requester }) => {
     where: { id: chapterId },
     include: { story: { select: { id: true, authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   ensureCanManageStory({ story: chapter.story, requester });
 
@@ -1716,12 +1677,12 @@ const deleteChapter = async ({ chapterId, requester }) => {
     where: { id: chapterId },
     include: { story: { select: { authorId: true } } },
   });
-  if (!chapter) throw new Error("Không tìm thấy chương");
+  if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
   ensureCanManageStory({ story: chapter.story, requester });
 
   await prisma.chapter.delete({ where: { id: chapter.id } });
-  return { message: "Xóa chương thành công" };
+  return { message: "Đã xóa chương thành công." };
 };
 
 module.exports = {
@@ -1743,6 +1704,9 @@ module.exports = {
   unpublishChapter,
   deleteChapter,
 };
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const { emitNotificationToUser } = require("../../realtime/socket");
 
 const DEFAULT_LIMIT = 20;
@@ -47,7 +47,7 @@ const parseLimit = (value) => {
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("limit phải là số nguyên dương");
+    throw new Error("Giới hạn phân trang không hợp lệ.");
   }
 
   return Math.min(parsed, MAX_LIMIT);
@@ -64,7 +64,7 @@ const parseBoolean = (value, fallback = false) => {
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
   if (value === "false") return false;
-  throw new Error("Giá trị boolean không hợp lệ");
+  throw new Error("Tham số chỉ đúng/sai không hợp lệ.");
 };
 
 const ensureUserExists = async (userId, message) => {
@@ -86,7 +86,7 @@ const ensureStoryExists = async (storyId) => {
     select: { id: true },
   });
 
-  if (!story) throw new Error("Không tìm thấy truyện liên quan");
+  if (!story) throw new Error("Không tìm thấy truyện.");
 };
 
 const ensureChapterExists = async (chapterId) => {
@@ -97,13 +97,13 @@ const ensureChapterExists = async (chapterId) => {
     select: { id: true, storyId: true },
   });
 
-  if (!chapter) throw new Error("Không tìm thấy chương liên quan");
+  if (!chapter) throw new Error("Không tìm thấy chương.");
   return chapter;
 };
 
 const validateNotificationType = (type) => {
   if (!ALLOWED_NOTIFICATION_TYPES.has(type)) {
-    throw new Error("type không hợp lệ");
+    throw new Error("Loại thông báo không hợp lệ.");
   }
 };
 
@@ -204,7 +204,7 @@ const markAsRead = async ({ userId, notificationId }) => {
     },
   });
 
-  if (!existing) throw new Error("Không tìm thấy thông báo");
+  if (!existing) throw new Error("Không tìm thấy thông báo.");
 
   const notification = await prisma.notification.update({
     where: { id: notificationId },
@@ -233,7 +233,7 @@ const markAllAsRead = async ({ userId }) => {
   });
 
   return {
-    message: "Đã đánh dấu tất cả thông báo là đã đọc",
+    message: "Đã đánh dấu tất cả thông báo là đã đọc.",
     updated_count: result.count,
   };
 };
@@ -256,13 +256,13 @@ const createNotification = async ({
   const normalizedType = normalizeOptionalString(type);
   const normalizedTitle = normalizeOptionalString(title);
 
-  if (!normalizedRecipientId) throw new Error("recipient_id là bắt buộc");
-  if (!normalizedType) throw new Error("type là bắt buộc");
-  if (!normalizedTitle) throw new Error("title là bắt buộc");
+  if (!normalizedRecipientId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
+  if (!normalizedType) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
+  if (!normalizedTitle) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   validateNotificationType(normalizedType);
 
-  await ensureUserExists(normalizedRecipientId, "Không tìm thấy người dùng nhận thông báo");
-  await ensureUserExists(normalizedActorId, "Không tìm thấy người dùng thực hiện hành động");
+  await ensureUserExists(normalizedRecipientId, "Không tìm thấy người nhận thông báo.");
+  await ensureUserExists(normalizedActorId, "Không tìm thấy người thực hiện hành động.");
   await ensureStoryExists(normalizedStoryId);
   const chapter = await ensureChapterExists(normalizedChapterId);
   if (
@@ -270,7 +270,7 @@ const createNotification = async ({
     normalizedStoryId &&
     chapter.storyId !== normalizedStoryId
   ) {
-    throw new Error("chapter_id không thuộc story_id đã chọn");
+    throw new Error("Thông tin chương và truyện không khớp.");
   }
 
   const notification = await prisma.notification.create({
@@ -317,7 +317,7 @@ const createTestNotification = async ({
     chapterId,
     type: type || "system",
     title: title || "Thông báo thử nghiệm",
-    body: body || "Socket.IO đã gửi thông báo realtime tới tài khoản của bạn.",
+    body: body || "Đây là thông báo thử gửi realtime tới tài khoản của bạn.",
     linkUrl,
     meta,
   });
@@ -331,3 +331,4 @@ module.exports = {
   createNotification,
   createTestNotification,
 };
+

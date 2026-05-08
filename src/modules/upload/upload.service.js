@@ -29,7 +29,7 @@ const readyBuckets = new Set();
 
 const parseImageDataUri = (dataUri) => {
   const match = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) throw new Error("File áº£nh pháº£i lÃ  data URI base64 há»£p lá»‡");
+  if (!match) throw new Error("Ảnh không đúng định dạng, vui lòng chọn file JPG, PNG hoặc WebP.");
 
   const mimeType = match[1];
   const base64Data = match[2];
@@ -55,7 +55,7 @@ const normalizeImageToWebp = async ({
   fit = "cover",
   background,
   maxOutputFileSizeBytes = MAX_OUTPUT_FILE_SIZE_BYTES,
-  outputTooLargeMessage = "áº¢nh sau khi xá»­ lÃ½ vÆ°á»£t dung lÆ°á»£ng cho phÃ©p",
+  outputTooLargeMessage = "Ảnh sau khi xử lý vượt quá dung lượng cho phép.",
 }) => {
   const outputBuffer = await sharp(inputBuffer)
     .rotate()
@@ -81,7 +81,7 @@ const normalizeAvatarToWebp = async (inputBuffer) =>
     width: AVATAR_RENDER_WIDTH,
     height: AVATAR_RENDER_HEIGHT,
     quality: AVATAR_RENDER_QUALITY,
-    outputTooLargeMessage: "Avatar sau khi xá»­ lÃ½ pháº£i nhá» hÆ¡n hoáº·c báº±ng 1MB",
+    outputTooLargeMessage: "Ảnh đại diện sau khi xử lý cần nhỏ hơn hoặc bằng 1MB.",
   });
 
 const normalizeStoryCoverToWebp = async (inputBuffer) =>
@@ -91,7 +91,7 @@ const normalizeStoryCoverToWebp = async (inputBuffer) =>
     height: STORY_COVER_HEIGHT,
     quality: STORY_COVER_QUALITY,
     fit: "cover",
-    outputTooLargeMessage: "áº¢nh bÃ¬a sau khi xá»­ lÃ½ pháº£i nhá» hÆ¡n hoáº·c báº±ng 1MB",
+    outputTooLargeMessage: "Ảnh bìa sau khi xử lý cần nhỏ hơn hoặc bằng 1MB.",
   });
 
 const ensureStorageBucketExists = async (bucketName) => {
@@ -110,7 +110,7 @@ const ensureStorageBucketExists = async (bucketName) => {
   if (!listResponse.ok) {
     const listText = await listResponse.text();
     throw new Error(
-      `KhÃ´ng thá»ƒ láº¥y danh sÃ¡ch bucket: ${listResponse.status} ${listText || ""}`.trim(),
+      `Storage list request failed (${listResponse.status}): ${listText || ""}`.trim(),
     );
   }
 
@@ -138,7 +138,7 @@ const ensureStorageBucketExists = async (bucketName) => {
   if (!createResponse.ok) {
     const createText = await createResponse.text();
     throw new Error(
-      `KhÃ´ng thá»ƒ táº¡o bucket '${bucketName}': ${createResponse.status} ${createText || ""}`.trim(),
+      `Storage create bucket failed (${createResponse.status}): ${createText || ""}`.trim(),
     );
   }
 
@@ -147,19 +147,19 @@ const ensureStorageBucketExists = async (bucketName) => {
 
 const uploadImage = async ({ bucketName, folder, imageBase64 }) => {
   if (!isSupabaseStorageConfigured()) {
-    throw new Error("Supabase Storage chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh");
+    throw new Error("Tính năng tải ảnh chưa sẵn sàng, vui lòng thử lại sau.");
   }
   if (typeof fetch !== "function") {
-    throw new Error("Node runtime chÆ°a há»— trá»£ fetch");
+    throw new Error("Fetch API is not available in this Node.js runtime.");
   }
   await ensureStorageBucketExists(bucketName);
 
   const { mimeType, buffer } = parseImageDataUri(imageBase64);
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-    throw new Error("áº¢nh chá»‰ há»— trá»£ jpeg, png hoáº·c webp");
+    throw new Error("Chỉ hỗ trợ ảnh JPG, PNG hoặc WebP.");
   }
   if (!buffer.length || buffer.length > MAX_INPUT_FILE_SIZE_BYTES) {
-    throw new Error("áº¢nh Ä‘áº§u vÃ o pháº£i nhá» hÆ¡n hoáº·c báº±ng 10MB");
+    throw new Error("Ảnh quá lớn. Vui lòng chọn file nhỏ hơn 10MB.");
   }
 
   const processedBuffer = await normalizeAvatarToWebp(buffer);
@@ -181,7 +181,7 @@ const uploadImage = async ({ bucketName, folder, imageBase64 }) => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Upload áº£nh tháº¥t báº¡i: ${response.status} ${errorText || ""}`.trim());
+    throw new Error(`Image upload failed (${response.status}): ${errorText || ""}`.trim());
   }
 
   return {
@@ -204,22 +204,22 @@ const uploadStoryCoverAndGetUrl = async ({
     });
   }
 
-  if (!normalizedCoverBase64) throw new Error("Thiáº¿u dá»¯ liá»‡u áº£nh bÃ¬a");
+  if (!normalizedCoverBase64) throw new Error("Vui lòng chọn ảnh bìa hợp lệ.");
   if (!isSupabaseStorageConfigured()) {
-    throw new Error("Supabase Storage chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh");
+    throw new Error("Tính năng tải ảnh chưa sẵn sàng, vui lòng thử lại sau.");
   }
   if (typeof fetch !== "function") {
-    throw new Error("Node runtime chÆ°a há»— trá»£ fetch");
+    throw new Error("Fetch API is not available in this Node.js runtime.");
   }
 
   await ensureStorageBucketExists(supabaseStoryCoverBucket);
 
   const { mimeType, buffer } = parseImageDataUri(normalizedCoverBase64);
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-    throw new Error("áº¢nh bÃ¬a chá»‰ há»— trá»£ jpeg, png hoáº·c webp");
+    throw new Error("Chỉ hỗ trợ ảnh bìa JPG, PNG hoặc WebP.");
   }
   if (!buffer.length || buffer.length > MAX_INPUT_FILE_SIZE_BYTES) {
-    throw new Error("áº¢nh bÃ¬a Ä‘áº§u vÃ o pháº£i nhá» hÆ¡n hoáº·c báº±ng 10MB");
+    throw new Error("Ảnh bìa quá lớn. Vui lòng chọn file nhỏ hơn 10MB.");
   }
 
   const processedBuffer = await normalizeStoryCoverToWebp(buffer);
@@ -240,7 +240,7 @@ const uploadStoryCoverAndGetUrl = async ({
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Upload áº£nh bÃ¬a tháº¥t báº¡i: ${response.status} ${errorText || ""}`.trim());
+    throw new Error(`Story cover upload failed (${response.status}): ${errorText || ""}`.trim());
   }
 
   return buildPublicUrl({ bucketName: supabaseStoryCoverBucket, filePath });
@@ -287,13 +287,13 @@ const deleteFileByPublicUrl = async (publicUrl) => {
 
   if (!response.ok && response.status !== 404) {
     const errorText = await response.text();
-    throw new Error(`XÃ³a áº£nh tháº¥t báº¡i: ${response.status} ${errorText || ""}`.trim());
+    throw new Error(`Image delete failed (${response.status}): ${errorText || ""}`.trim());
   }
 };
 
 const uploadMyAvatar = async ({ userId, avatarBase64, avatarBuffer, avatarMimeType }) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error("KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng");
+  if (!user) throw new Error("Không tìm thấy tài khoản.");
 
   const avatarRenderUrl = await uploadAvatarAndGetUrl({
     userId,
@@ -331,7 +331,7 @@ const uploadAvatarAndGetUrl = async ({
     });
   }
 
-  if (!normalizedAvatarBase64) throw new Error("Thiáº¿u dá»¯ liá»‡u avatar");
+  if (!normalizedAvatarBase64) throw new Error("Vui lòng chọn ảnh đại diện hợp lệ.");
 
   const { filePath } = await uploadImage({
     bucketName: supabaseAvatarBucket,
@@ -355,4 +355,5 @@ module.exports = {
   uploadStoryCoverAndGetUrl,
   deleteFileByPublicUrl,
 };
+
 

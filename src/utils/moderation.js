@@ -2,10 +2,6 @@ const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-const GEMINI_COMMENT_MODEL =
-  process.env.GEMINI_COMMENT_MODEL ||
-  process.env.GEMINI_MODEL ||
-  "gemini-2.5-flash-lite";
 const DEFAULT_MODERATION_TIMEOUT_MS = Number.parseInt(
   process.env.GEMINI_MODERATION_TIMEOUT_MS || "3500",
   10,
@@ -65,18 +61,6 @@ function buildPrompt(input) {
     "- spam: rác, lặp nội dung, quảng cáo",
     "- Nếu không có dấu hiệu rõ ràng thì flagged=false, categories=[]",
     `Nội dung cần đánh giá: """${String(input)}"""`,
-  ].join("\n");
-}
-
-function buildCommentPrompt(input) {
-  return [
-    "Moderate this Vietnamese comment for a reading app.",
-    "Return exactly one valid JSON object only. The first character must be { and the last character must be }.",
-    "Do not include markdown, prose, or lead-in text such as 'Here is'.",
-    'Schema: {"flagged": boolean, "categories": string[], "confidence": number, "severity": "low"|"medium"|"high"|"critical", "reason": string}',
-    "Allowed categories: harassment, hate, sexual, violence, self_harm, spam.",
-    "If uncertain or harmless, flagged=false and categories=[].",
-    `Comment: """${String(input)}"""`,
   ].join("\n");
 }
 
@@ -247,22 +231,7 @@ async function moderateText(input, options = {}) {
   };
 }
 
-async function moderateCommentText(input, options = {}) {
-  const result = await moderateText(input, {
-    ...options,
-    model: options.model || GEMINI_COMMENT_MODEL,
-    prompt: buildCommentPrompt(input),
-    maxOutputTokens: 1024,
-  });
-
-  return {
-    ...result,
-    reason: "",
-  };
-}
-
 module.exports = {
-  moderateCommentText,
   moderateText,
   mapModerationSeverity,
 };

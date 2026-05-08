@@ -11,7 +11,7 @@ const parseLimit = (value) => {
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("limit phải là số nguyên dương");
+    throw new Error("Giới hạn danh sách (limit) không hợp lệ.");
   }
 
   return Math.min(parsed, MAX_LIMIT);
@@ -22,7 +22,7 @@ const parsePage = (value) => {
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("page phải là số nguyên dương");
+    throw new Error("Số trang (page) không hợp lệ.");
   }
 
   return Math.min(parsed, MAX_PAGE);
@@ -56,13 +56,12 @@ const storySummaryInclude = {
       avatarUrl: true,
     },
   },
-  storyGenres: {
+  storyTags: {
     include: {
-      genre: {
+      tag: {
         select: {
           id: true,
           name: true,
-          slug: true,
         },
       },
     },
@@ -134,11 +133,10 @@ const formatStorySummary = (story, ratingStatsByStoryId = new Map()) => {
       : null,
     chapter_count:
       typeof story._count?.chapters === "number" ? story._count.chapters : 0,
-    genres: Array.isArray(story.storyGenres)
-      ? story.storyGenres.map((item) => ({
-          id: item.genre.id,
-          name: item.genre.name,
-          slug: item.genre.slug,
+    tags: Array.isArray(story.storyTags)
+      ? story.storyTags.map((item) => ({
+          id: item.tag.id,
+          name: item.tag.name,
         }))
       : [],
   };
@@ -374,3 +372,4 @@ module.exports = {
   getHotStories,
   getMonthlyRankingStories,
 };
+

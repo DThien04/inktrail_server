@@ -10,8 +10,8 @@ router.use("/reports", require("../modules/report/report.route"));
 router.use("/admin/dashboard", require("../modules/admin_dashboard/admin_dashboard.route"));
 router.use("/stories", require("../modules/story/story.route"));
 router.use("/chapters", require("../modules/chapter/chapter.route"));
-router.use("/genres", require("../modules/genre/genre.route"));
 router.use("/tags", require("../modules/tag/tag.route"));
+router.use("/tag-groups", require("../modules/tag_group/tag-group.route"));
 router.use("/users", require("../modules/user/user.route"));
 router.use("/", require("../modules/home/home.route"));
 // Sau thêm feature mới vào đây:

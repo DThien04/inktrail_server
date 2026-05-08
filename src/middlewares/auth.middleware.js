@@ -5,7 +5,7 @@ const authenticate = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Chưa đăng nhập" });
+      return res.status(401).json({ message: "Bạn cần đăng nhập để tiếp tục." });
     }
 
     const token = authHeader.split(" ")[1];

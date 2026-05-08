@@ -17,8 +17,6 @@ model User {
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
   bio                   String?                @map("bio")
-  reviewedApplications  AuthorApplication[]    @relation("AuthorApplicationReviewer")
-  authorApplications    AuthorApplication[]    @relation("AuthorApplicationUser")
   authorFollowers       AuthorFollow[]         @relation("AuthorFollowers")
   followingAuthors      AuthorFollow[]         @relation("AuthorFollowing")
   chapterCommentLikes   ChapterCommentLike[]
@@ -40,31 +38,6 @@ model User {
   storyReports          StoryReport[]
 
   @@map("users")
-}
-
-model AuthorApplication {
-  id                  String                  @id @default(uuid())
-  userId              String                  @map("user_id")
-  penName             String                  @map("pen_name")
-  bio                 String?                 @map("bio")
-  reason              String?                 @map("reason")
-  sampleLinks         Json?                   @map("sample_links")
-  status              AuthorApplicationStatus @default(pending)
-  trustScoreSnapshot  Int                     @default(0) @map("trust_score_snapshot")
-  eligibilitySnapshot Json?                   @map("eligibility_snapshot")
-  reviewedById        String?                 @map("reviewed_by_id")
-  reviewedAt          DateTime?               @map("reviewed_at")
-  reviewNote          String?                 @map("review_note")
-  rejectCooldownUntil DateTime?               @map("reject_cooldown_until")
-  createdAt           DateTime                @default(now()) @map("created_at")
-  updatedAt           DateTime                @updatedAt @map("updated_at")
-  reviewedBy          User?                   @relation("AuthorApplicationReviewer", fields: [reviewedById], references: [id])
-  user                User                    @relation("AuthorApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, status, createdAt])
-  @@index([status, createdAt])
-  @@index([rejectCooldownUntil])
-  @@map("author_applications")
 }
 
 model AuthorFollow {
@@ -133,7 +106,6 @@ model Story {
   readingProgresses    ReadingProgress[]
   author               User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
   hiddenBy             User?              @relation("StoryModeratedBy", fields: [hiddenById], references: [id])
-  storyGenres          StoryGenre[]
   storyTags            StoryTag[]
   ratings              StoryRating[]
   readSessions         StoryReadSession[]
@@ -508,43 +480,31 @@ model Announcement {
   @@map("announcements")
 }
 
-model Genre {
-  id          String       @id @default(uuid())
-  name        String       @unique
-  slug        String       @unique
-  description String?
-  isActive    Boolean      @default(true) @map("is_active")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-  storyGenres StoryGenre[]
-
-  @@index([isActive, name])
-  @@map("genres")
-}
-
 model Tag {
   id          String     @id @default(uuid())
   name        String     @unique
   description String?
+  groupId     String?    @map("group_id")
   isActive    Boolean    @default(true) @map("is_active")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
+  group       TagGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   storyTags   StoryTag[]
 
   @@index([isActive, name])
+  @@index([groupId, name])
   @@map("tags")
 }
 
-model StoryGenre {
-  storyId   String   @map("story_id")
-  genreId   String   @map("genre_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  genre     Genre    @relation(fields: [genreId], references: [id], onDelete: Cascade)
-  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+model TagGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  tags        Tag[]
 
-  @@id([storyId, genreId])
-  @@index([genreId])
-  @@map("story_genres")
+  @@map("tag_groups")
 }
 
 model StoryTag {
@@ -562,13 +522,6 @@ model StoryTag {
 enum Role {
   reader
   admin
-}
-
-enum AuthorApplicationStatus {
-  pending
-  approved
-  rejected
-  cancelled
 }
 
 enum StoryStatus {

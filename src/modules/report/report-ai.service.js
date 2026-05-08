@@ -111,9 +111,9 @@ function buildStoryCasePrompt(reportCase) {
   const firstReport = reportCase.storyReports[0];
   const story = firstReport?.story;
   const author = story?.author;
-  const genres = Array.isArray(story?.storyGenres)
-    ? story.storyGenres
-        .map((item) => item.genre?.name)
+  const tagNames = Array.isArray(story?.storyTags)
+    ? story.storyTags
+        .map((item) => item.tag?.name)
         .filter(Boolean)
         .join(", ")
     : "";
@@ -123,7 +123,7 @@ function buildStoryCasePrompt(reportCase) {
     ...buildSharedCasePromptLines(reportCase, "story"),
     `Story title: ${normalizeText(story?.title) || "Unknown"}`,
     `Author: ${normalizeText(author?.displayName || author?.email) || "Unknown"}`,
-    `Genres: ${genres || "Unknown"}`,
+    `Tags: ${tagNames || "Unknown"}`,
     `Story status: ${normalizeText(story?.status) || "Unknown"}; hidden=${Boolean(story?.isHidden)}`,
     `Story description: """${normalizeText(story?.description).slice(0, 2000)}"""`,
     "User reports:",
@@ -309,13 +309,12 @@ async function analyzeStoryReportCase({ caseId }) {
                   email: true,
                 },
               },
-              storyGenres: {
+              storyTags: {
                 include: {
-                  genre: {
+                  tag: {
                     select: {
                       id: true,
                       name: true,
-                      slug: true,
                     },
                   },
                 },
@@ -489,13 +488,12 @@ async function analyzeReportCaseAppealAi({ caseId }) {
                       email: true,
                     },
                   },
-                  storyGenres: {
+                  storyTags: {
                     include: {
-                      genre: {
+                      tag: {
                         select: {
                           id: true,
                           name: true,
-                          slug: true,
                         },
                       },
                     },
