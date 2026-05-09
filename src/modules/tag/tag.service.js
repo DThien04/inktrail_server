@@ -38,6 +38,7 @@ const formatTag = (tag) => ({
         name: tag.group.name,
       }
     : null,
+  story_count: tag._count?.storyTags ?? 0,
   created_at: tag.createdAt,
   updated_at: tag.updatedAt,
 });
@@ -79,6 +80,10 @@ const getTags = async ({ includeInactive = false, keyword } = {}) => {
             name: { contains: normalizedKeyword, mode: "insensitive" },
           }
         : {}),
+    },
+    include: {
+      group: { select: { id: true, name: true } },
+      _count: { select: { storyTags: true } },
     },
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
   });
@@ -215,6 +220,7 @@ const deleteTag = async ({ tagId, hardDelete = false }) => {
 const getAdminTags = async ({
   keyword,
   groupId,
+  ungroupedOnly = false,
   page = 1,
   pageSize = 20,
 } = {}) => {
@@ -227,7 +233,11 @@ const getAdminTags = async ({
     ...(normalizedKeyword
       ? { name: { contains: normalizedKeyword, mode: "insensitive" } }
       : {}),
-    ...(normalizeText(groupId) ? { groupId: normalizeText(groupId) } : {}),
+    ...(ungroupedOnly
+      ? { groupId: null }
+      : normalizeText(groupId)
+        ? { groupId: normalizeText(groupId) }
+        : {}),
   };
 
   const [total, tags] = await Promise.all([

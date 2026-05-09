@@ -35,9 +35,12 @@ const getAdminTags = async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
     const pageSize = Number(req.query.page_size || req.query.pageSize || 20);
+    const ungroupedOnly =
+      req.query.ungrouped_only === "true" || req.query.ungrouped === "true";
     const result = await tagService.getAdminTags({
       keyword: req.query.keyword,
       groupId: req.query.group_id || req.query.groupId,
+      ungroupedOnly,
       page,
       pageSize,
     });
@@ -87,7 +90,8 @@ const updateTag = async (req, res) => {
       tagId: req.params.id,
       name,
       description,
-      groupId: req.body?.group_id || req.body?.groupId,
+      groupId:
+        req.body.group_id !== undefined ? req.body.group_id : req.body?.groupId,
     });
 
     res.json({
@@ -103,7 +107,8 @@ const setTagsGroupBulk = async (req, res) => {
   try {
     const result = await tagService.setTagsGroupBulk({
       tagIds: req.body?.tag_ids || req.body?.tagIds,
-      groupId: req.body?.group_id || req.body?.groupId,
+      groupId:
+        req.body.group_id !== undefined ? req.body.group_id : req.body?.groupId,
     });
     res.json(result);
   } catch (err) {
