@@ -442,6 +442,7 @@ const ensureStoryOwnerOrAdmin = ({ story, requester }) => {
   }
 };
 
+
 const createStory = async ({
   authorId,
   title,
@@ -2017,6 +2018,21 @@ const updateStory = async ({
     } catch (err) {
       console.error("Cleanup old story cover failed:", err.message);
     }
+  }
+
+  if (
+    story.status !== "published" &&
+    updatedStory.status === "published" &&
+    updatedStory.moderationStatus === "approved" &&
+    !updatedStory.isHidden &&
+    updatedStory.publishedAt
+  ) {
+    await notificationService.notifyFollowersAboutStoryPublished({
+      authorId: updatedStory.authorId,
+      storyId: updatedStory.id,
+      storyTitle: updatedStory.title,
+      storySlug: updatedStory.slug,
+    });
   }
 
   return formatStory(updatedStory);

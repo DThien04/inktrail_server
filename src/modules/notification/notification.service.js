@@ -1,8 +1,10 @@
-﻿const prisma = require("../../config/prisma");
+const prisma = require("../../config/prisma");
 const { emitNotificationToUser } = require("../../realtime/socket");
+const { sendPushToUser } = require("./onesignal-push.service");
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const FOLLOWER_NOTIFY_BATCH_SIZE = 200;
 const CHAPTER_COMMENT_NOTIFICATION_TYPE = "chapter_commented";
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   "system",
@@ -47,7 +49,7 @@ const parseLimit = (value) => {
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("Giới hạn phân trang không hợp lệ.");
+    throw new Error("Giá»›i háº¡n phÃ¢n trang khÃ´ng há»£p lá»‡.");
   }
 
   return Math.min(parsed, MAX_LIMIT);
@@ -64,7 +66,7 @@ const parseBoolean = (value, fallback = false) => {
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
   if (value === "false") return false;
-  throw new Error("Tham số chỉ đúng/sai không hợp lệ.");
+  throw new Error("Tham sá»‘ chá»‰ Ä‘Ãºng/sai khÃ´ng há»£p lá»‡.");
 };
 
 const ensureUserExists = async (userId, message) => {
@@ -86,7 +88,7 @@ const ensureStoryExists = async (storyId) => {
     select: { id: true },
   });
 
-  if (!story) throw new Error("Không tìm thấy truyện.");
+  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n.");
 };
 
 const ensureChapterExists = async (chapterId) => {
@@ -97,13 +99,13 @@ const ensureChapterExists = async (chapterId) => {
     select: { id: true, storyId: true },
   });
 
-  if (!chapter) throw new Error("Không tìm thấy chương.");
+  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng.");
   return chapter;
 };
 
 const validateNotificationType = (type) => {
   if (!ALLOWED_NOTIFICATION_TYPES.has(type)) {
-    throw new Error("Loại thông báo không hợp lệ.");
+    throw new Error("Loáº¡i thÃ´ng bÃ¡o khÃ´ng há»£p lá»‡.");
   }
 };
 
@@ -204,7 +206,7 @@ const markAsRead = async ({ userId, notificationId }) => {
     },
   });
 
-  if (!existing) throw new Error("Không tìm thấy thông báo.");
+  if (!existing) throw new Error("KhÃ´ng tÃ¬m tháº¥y thÃ´ng bÃ¡o.");
 
   const notification = await prisma.notification.update({
     where: { id: notificationId },
@@ -233,7 +235,7 @@ const markAllAsRead = async ({ userId }) => {
   });
 
   return {
-    message: "Đã đánh dấu tất cả thông báo là đã đọc.",
+    message: "ÄÃ£ Ä‘Ã¡nh dáº¥u táº¥t cáº£ thÃ´ng bÃ¡o lÃ  Ä‘Ã£ Ä‘á»c.",
     updated_count: result.count,
   };
 };
@@ -256,13 +258,13 @@ const createNotification = async ({
   const normalizedType = normalizeOptionalString(type);
   const normalizedTitle = normalizeOptionalString(title);
 
-  if (!normalizedRecipientId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
-  if (!normalizedType) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
-  if (!normalizedTitle) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
+  if (!normalizedRecipientId) throw new Error("Vui lÃ²ng kiá»ƒm tra láº¡i thÃ´ng tin Ä‘Ã£ nháº­p.");
+  if (!normalizedType) throw new Error("Vui lÃ²ng kiá»ƒm tra láº¡i thÃ´ng tin Ä‘Ã£ nháº­p.");
+  if (!normalizedTitle) throw new Error("Vui lÃ²ng kiá»ƒm tra láº¡i thÃ´ng tin Ä‘Ã£ nháº­p.");
   validateNotificationType(normalizedType);
 
-  await ensureUserExists(normalizedRecipientId, "Không tìm thấy người nhận thông báo.");
-  await ensureUserExists(normalizedActorId, "Không tìm thấy người thực hiện hành động.");
+  await ensureUserExists(normalizedRecipientId, "KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i nháº­n thÃ´ng bÃ¡o.");
+  await ensureUserExists(normalizedActorId, "KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i thá»±c hiá»‡n hÃ nh Ä‘á»™ng.");
   await ensureStoryExists(normalizedStoryId);
   const chapter = await ensureChapterExists(normalizedChapterId);
   if (
@@ -270,7 +272,7 @@ const createNotification = async ({
     normalizedStoryId &&
     chapter.storyId !== normalizedStoryId
   ) {
-    throw new Error("Thông tin chương và truyện không khớp.");
+    throw new Error("ThÃ´ng tin chÆ°Æ¡ng vÃ  truyá»‡n khÃ´ng khá»›p.");
   }
 
   const notification = await prisma.notification.create({
@@ -290,6 +292,31 @@ const createNotification = async ({
 
   const payload = formatNotification(notification);
   emitNotificationToUser(normalizedRecipientId, payload);
+
+  try {
+    await sendPushToUser({
+      userId: normalizedRecipientId,
+      title: payload.title,
+      body: payload.body,
+      data: {
+        id: payload.id,
+        type: payload.type,
+        link_url: payload.link_url,
+        story_id: payload.story_id,
+        chapter_id: payload.chapter_id,
+        meta: payload.meta,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "[onesignal-push:error]",
+      JSON.stringify({
+        recipient_id: normalizedRecipientId,
+        notification_id: payload.id,
+        message: error?.message || String(error),
+      }),
+    );
+  }
 
   return payload;
 };
@@ -316,11 +343,153 @@ const createTestNotification = async ({
     storyId,
     chapterId,
     type: type || "system",
-    title: title || "Thông báo thử nghiệm",
-    body: body || "Đây là thông báo thử gửi realtime tới tài khoản của bạn.",
+    title: title || "ThÃ´ng bÃ¡o thá»­ nghiá»‡m",
+    body: body || "ÄÃ¢y lÃ  thÃ´ng bÃ¡o thá»­ gá»­i realtime tá»›i tÃ i khoáº£n cá»§a báº¡n.",
     linkUrl,
     meta,
   });
+};
+
+const getFollowerRecipientIds = async ({ authorId }) => {
+  const normalizedAuthorId = normalizeOptionalString(authorId);
+  if (!normalizedAuthorId) return [];
+
+  const followers = await prisma.authorFollow.findMany({
+    where: { authorId: normalizedAuthorId },
+    select: { followerId: true },
+  });
+
+  return [
+    ...new Set(
+      followers
+        .map((item) => normalizeOptionalString(item.followerId))
+        .filter((id) => Boolean(id) && id !== normalizedAuthorId),
+    ),
+  ];
+};
+
+const notifyFollowersAboutStoryPublished = async ({
+  authorId,
+  storyId,
+  storyTitle,
+  storySlug,
+}) => {
+  const normalizedAuthorId = normalizeOptionalString(authorId);
+  const normalizedStoryId = normalizeOptionalString(storyId);
+  if (!normalizedAuthorId || !normalizedStoryId) return;
+
+  const recipientIds = await getFollowerRecipientIds({ authorId: normalizedAuthorId });
+  if (!recipientIds.length) return;
+
+  const existingRows = await prisma.notification.findMany({
+    where: {
+      recipientId: { in: recipientIds },
+      type: "story_published",
+      storyId: normalizedStoryId,
+    },
+    select: { recipientId: true },
+  });
+
+  const notifiedRecipientIds = new Set(
+    existingRows.map((row) => normalizeOptionalString(row.recipientId)).filter(Boolean),
+  );
+  const targets = recipientIds.filter((id) => !notifiedRecipientIds.has(id));
+  if (!targets.length) return;
+
+  for (let i = 0; i < targets.length; i += FOLLOWER_NOTIFY_BATCH_SIZE) {
+    const chunk = targets.slice(i, i + FOLLOWER_NOTIFY_BATCH_SIZE);
+    await Promise.allSettled(
+      chunk.map((recipientId) =>
+        createNotification({
+          recipientId,
+          actorId: normalizedAuthorId,
+          storyId: normalizedStoryId,
+          type: "story_published",
+          title: "TÃ¡c giáº£ báº¡n theo dÃµi vá»«a Ä‘Äƒng truyá»‡n má»›i",
+          body: normalizeOptionalString(storyTitle) || "CÃ³ má»™t truyá»‡n má»›i vá»«a Ä‘Æ°á»£c xuáº¥t báº£n.",
+          linkUrl: storySlug ? `/stories/${storySlug}` : null,
+          meta: {
+            author_id: normalizedAuthorId,
+            story_id: normalizedStoryId,
+            story_title: normalizeOptionalString(storyTitle),
+          },
+        }),
+      ),
+    );
+  }
+};
+
+const notifyFollowersAboutChapterPublished = async ({
+  authorId,
+  storyId,
+  storyTitle,
+  storySlug,
+  chapterId,
+  chapterNumber,
+  chapterTitle,
+}) => {
+  const normalizedAuthorId = normalizeOptionalString(authorId);
+  const normalizedStoryId = normalizeOptionalString(storyId);
+  const normalizedChapterId = normalizeOptionalString(chapterId);
+  if (!normalizedAuthorId || !normalizedStoryId || !normalizedChapterId) return;
+
+  const recipientIds = await getFollowerRecipientIds({ authorId: normalizedAuthorId });
+  if (!recipientIds.length) return;
+
+  const existingRows = await prisma.notification.findMany({
+    where: {
+      recipientId: { in: recipientIds },
+      type: "chapter_published",
+      chapterId: normalizedChapterId,
+    },
+    select: { recipientId: true },
+  });
+
+  const notifiedRecipientIds = new Set(
+    existingRows.map((row) => normalizeOptionalString(row.recipientId)).filter(Boolean),
+  );
+  const targets = recipientIds.filter((id) => !notifiedRecipientIds.has(id));
+  if (!targets.length) return;
+
+  const chapterLabel =
+    Number.isInteger(chapterNumber) && chapterNumber > 0
+      ? `ChÆ°Æ¡ng ${chapterNumber}`
+      : "ChÆ°Æ¡ng má»›i";
+  const defaultBody = [chapterLabel, normalizeOptionalString(chapterTitle)]
+    .filter(Boolean)
+    .join(": ");
+
+  for (let i = 0; i < targets.length; i += FOLLOWER_NOTIFY_BATCH_SIZE) {
+    const chunk = targets.slice(i, i + FOLLOWER_NOTIFY_BATCH_SIZE);
+    await Promise.allSettled(
+      chunk.map((recipientId) =>
+        createNotification({
+          recipientId,
+          actorId: normalizedAuthorId,
+          storyId: normalizedStoryId,
+          chapterId: normalizedChapterId,
+          type: "chapter_published",
+          title: "TÃ¡c giáº£ báº¡n theo dÃµi vá»«a ra chÆ°Æ¡ng má»›i",
+          body: defaultBody || "CÃ³ chÆ°Æ¡ng má»›i vá»«a Ä‘Æ°á»£c xuáº¥t báº£n.",
+          linkUrl:
+            storySlug && normalizedChapterId
+              ? `/stories/${storySlug}/chapters/${normalizedChapterId}`
+              : null,
+          meta: {
+            author_id: normalizedAuthorId,
+            story_id: normalizedStoryId,
+            story_title: normalizeOptionalString(storyTitle),
+            chapter_id: normalizedChapterId,
+            chapter_number:
+              Number.isInteger(chapterNumber) && chapterNumber > 0
+                ? chapterNumber
+                : null,
+            chapter_title: normalizeOptionalString(chapterTitle),
+          },
+        }),
+      ),
+    );
+  }
 };
 
 module.exports = {
@@ -330,5 +499,7 @@ module.exports = {
   markAllAsRead,
   createNotification,
   createTestNotification,
+  notifyFollowersAboutStoryPublished,
+  notifyFollowersAboutChapterPublished,
 };
 

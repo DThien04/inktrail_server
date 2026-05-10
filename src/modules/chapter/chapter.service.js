@@ -1,4 +1,4 @@
-﻿const crypto = require("crypto");
+const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
 const {
@@ -255,8 +255,8 @@ const notifyAdminsAboutChapterAiFlag = async ({
         storyId: story.id,
         chapterId: chapter.id,
         type: "admin_message",
-        title: "AI gắn cờ chương của tác giả",
-        body: `Chương ${chapter.chapterNumber} của truyện ${story.title} bị AI gắn cờ và đã tự ẩn.`,
+        title: "AI vua gan co mot chuong can duyet",
+        body: `Chuong ${chapter.chapterNumber} cua truyen ${story.title} co dau hieu rui ro va da duoc tam an de kiem tra.`,
         linkUrl: story.slug ? `/stories/${story.slug}/chapters/${chapter.id}` : null,
         meta: {
           target_type: "chapter",
@@ -314,6 +314,37 @@ const processChapterModeration = async ({
           moderationReason: moderationResult.reason || null,
         },
       });
+
+      const refreshedChapter = await prisma.chapter.findUnique({
+        where: { id: chapter.id },
+        select: {
+          id: true,
+          chapterNumber: true,
+          title: true,
+          status: true,
+          moderationStatus: true,
+          isHidden: true,
+          publishedAt: true,
+        },
+      });
+
+      if (
+        refreshedChapter &&
+        refreshedChapter.status === "published" &&
+        refreshedChapter.moderationStatus === "approved" &&
+        !refreshedChapter.isHidden &&
+        refreshedChapter.publishedAt
+      ) {
+        await notificationService.notifyFollowersAboutChapterPublished({
+          authorId: chapter.story.authorId,
+          storyId: chapter.story.id,
+          storyTitle: chapter.story.title,
+          storySlug: chapter.story.slug,
+          chapterId: refreshedChapter.id,
+          chapterNumber: refreshedChapter.chapterNumber,
+          chapterTitle: refreshedChapter.title,
+        });
+      }
       return;
     }
 
@@ -348,9 +379,9 @@ const processChapterModeration = async ({
       storyId: chapter.story.id,
       chapterId: chapter.id,
       type: "admin_message",
-      title: "Chương đã bị AI tạm ẩn để rà soát",
+      title: "Chuong cua ban dang tam an de ra soat",
       body:
-        "Nội dung chương có dấu hiệu vi phạm tiêu chuẩn cộng đồng. Bạn có thể chỉnh sửa nội dung và đăng lại.",
+        "AI phat hien mot so dau hieu chua an toan. Ban co the chinh sua noi dung roi xuat ban lai.",
       linkUrl: chapter.story.slug
         ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
         : null,
@@ -1586,7 +1617,7 @@ const updateChapter = async ({
 const publishChapter = async ({ chapterId, requester }) => {
   const chapter = await prisma.chapter.findUnique({
     where: { id: chapterId },
-    include: { story: { select: { id: true, authorId: true } } },
+    include: { story: { select: { id: true, authorId: true, title: true, slug: true } } },
   });
   if (!chapter) throw new Error("Không tìm thấy nội dung bạn cần.");
 
@@ -1643,6 +1674,24 @@ const publishChapter = async ({ chapterId, requester }) => {
     data.moderationStatus === "pending"
   ) {
     scheduleChapterModeration(updatedChapter.id, chapter.story.authorId);
+  }
+
+  if (
+    chapter.status !== "published" &&
+    updatedChapter.status === "published" &&
+    updatedChapter.moderationStatus === "approved" &&
+    !updatedChapter.isHidden &&
+    updatedChapter.publishedAt
+  ) {
+    await notificationService.notifyFollowersAboutChapterPublished({
+      authorId: chapter.story.authorId,
+      storyId: chapter.story.id,
+      storyTitle: chapter.story.title,
+      storySlug: chapter.story.slug,
+      chapterId: updatedChapter.id,
+      chapterNumber: updatedChapter.chapterNumber,
+      chapterTitle: updatedChapter.title,
+    });
   }
 
   return formatChapter(updatedChapter);

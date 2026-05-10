@@ -13,4 +13,11 @@ module.exports = {
     accessExpires: process.env.JWT_ACCESS_EXPIRES || "15m",
     refreshExpires: process.env.JWT_REFRESH_EXPIRES || "7d",
   },
+  oneSignal: {
+    appId: process.env.ONESIGNAL_APP_ID || "",
+    restApiKey: process.env.ONESIGNAL_REST_API_KEY || "",
+    apiUrl:
+      process.env.ONESIGNAL_API_URL ||
+      "https://api.onesignal.com/notifications",
+  },
 };
