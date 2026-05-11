@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const { jwt: jwtConfig, web } = require("../config/jwt");
 
 let ioInstance = null;
+const PUBLIC_ADMIN_BROADCAST_ROOM = "public:admin-broadcasts";
 
 const getTokenFromSocket = (socket) => {
   const authToken = socket.handshake.auth?.token;
@@ -53,6 +54,7 @@ const initializeSocket = (server) => {
     if (userId) {
       socket.join(`user:${userId}`);
     }
+    socket.join(PUBLIC_ADMIN_BROADCAST_ROOM);
 
     socket.on("comments:subscribe-story", (payload = {}) => {
       const storyId = String(payload.story_id || "").trim();
@@ -77,11 +79,6 @@ const initializeSocket = (server) => {
       if (!chapterId) return;
       socket.leave(`chapter:${chapterId}:comments`);
     });
-
-    socket.emit("notifications:connected", {
-      user_id: userId,
-      connected_at: new Date().toISOString(),
-    });
   });
 
   return ioInstance;
@@ -90,6 +87,11 @@ const initializeSocket = (server) => {
 const emitNotificationToUser = (userId, payload) => {
   if (!ioInstance || !userId) return;
   ioInstance.to(`user:${userId}`).emit("notification:new", payload);
+};
+
+const emitAdminBroadcastPublic = (payload) => {
+  if (!ioInstance) return;
+  ioInstance.to(PUBLIC_ADMIN_BROADCAST_ROOM).emit("admin-broadcast:new", payload);
 };
 
 const emitChapterComment = (chapterId, payload) => {
@@ -111,6 +113,7 @@ const emitChapterCommentRemoved = (chapterId, payload) => {
 module.exports = {
   initializeSocket,
   emitNotificationToUser,
+  emitAdminBroadcastPublic,
   emitChapterComment,
   emitChapterCommentRemoved,
 };

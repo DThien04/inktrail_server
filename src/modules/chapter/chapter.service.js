@@ -255,8 +255,8 @@ const notifyAdminsAboutChapterAiFlag = async ({
         storyId: story.id,
         chapterId: chapter.id,
         type: "admin_message",
-        title: "AI vua gan co mot chuong can duyet",
-        body: `Chuong ${chapter.chapterNumber} cua truyen ${story.title} co dau hieu rui ro va da duoc tam an de kiem tra.`,
+        title: "AI vừa gắn cờ một chương cần duyệt",
+        body: `Chương ${chapter.chapterNumber} của truyện «${story.title}» có dấu hiệu rủi ro và đã được tạm ẩn để kiểm tra.`,
         linkUrl: story.slug ? `/stories/${story.slug}/chapters/${chapter.id}` : null,
         meta: {
           target_type: "chapter",
@@ -379,9 +379,9 @@ const processChapterModeration = async ({
       storyId: chapter.story.id,
       chapterId: chapter.id,
       type: "admin_message",
-      title: "Chuong cua ban dang tam an de ra soat",
+      title: "Chương của bạn đang tạm ẩn để rà soát",
       body:
-        "AI phat hien mot so dau hieu chua an toan. Ban co the chinh sua noi dung roi xuat ban lai.",
+        "AI phát hiện một số dấu hiệu chưa an toàn. Bạn có thể chỉnh sửa nội dung rồi xuất bản lại.",
       linkUrl: chapter.story.slug
         ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
         : null,
@@ -631,7 +631,7 @@ const processCommentModeration = async ({ commentId, attempt = 1 }) => {
         storyId: comment.chapter.story.id,
         chapterId: comment.chapter.id,
         type: CHAPTER_COMMENT_NOTIFICATION_TYPE,
-        title: `${getRequesterDisplayName(comment.user)} da binh luan chuong ${comment.chapter.chapterNumber} cua truyen ${comment.chapter.story.title}`,
+        title: `${getRequesterDisplayName(comment.user)} đã bình luận chương ${comment.chapter.chapterNumber} của truyện ${comment.chapter.story.title}`,
         body: comment.content,
         linkUrl: `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`,
         meta: {
@@ -1126,7 +1126,7 @@ const likeChapterComment = async ({ commentId, requester }) => {
       storyId: comment.chapter.story.id,
       chapterId: comment.chapter.id,
       type: "system",
-      title: `${getRequesterDisplayName(requester)} da thich binh luan cua ban`,
+      title: `${getRequesterDisplayName(requester)} đã thích bình luận của bạn`,
       body: comment.content,
       linkUrl: `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`,
       meta: {

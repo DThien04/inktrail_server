@@ -59,13 +59,13 @@ const buildReportTargetLink = ({ type, storySlug, chapterId }) => {
 const summarizeReportAiForUser = (reportCase) => {
   const summary = normalizeText(reportCase?.aiSummary);
   if (summary) return summary;
-  return "Ben minh da nhan bao cao cua ban. Doi ngu dang xem xet va se gui ket qua som.";
+  return "Bên mình đã nhận báo cáo của bạn. Đội ngũ đang xem xét và sẽ gửi kết quả sớm.";
 };
 
 const summarizeAppealAiForUser = (reportCase) => {
   const summary = normalizeText(reportCase?.appealAiSummary);
   if (summary) return summary;
-  return "Khieu nai cua ban da duoc tiep nhan va chuyen den quan tri vien de xem xet.";
+  return "Khiếu nại của bạn đã được tiếp nhận và chuyển đến quản trị viên để xem xét.";
 };
 
 const scheduleReportCaseAiAnalysis = ({
@@ -88,7 +88,7 @@ const scheduleReportCaseAiAnalysis = ({
         storyId: storyId ?? null,
         chapterId: chapterId ?? null,
         type: "admin_message",
-        title: "Bao cao cua ban dang duoc xem xet",
+        title: "Báo cáo của bạn đang được xem xét",
         body: summarizeReportAiForUser(analyzed),
         linkUrl: buildReportTargetLink({ type, storySlug, chapterId }),
         meta: {
@@ -146,7 +146,7 @@ const scheduleReportAppealAiAnalysis = ({
         storyId: storyId ?? null,
         chapterId: chapterId ?? null,
         type: "admin_message",
-        title: "Khieu nai cua ban dang duoc xem xet",
+        title: "Khiếu nại của bạn đang được xem xét",
         body: summarizeAppealAiForUser(analyzed),
         linkUrl: buildReportTargetLink({
           type: reportType,
@@ -233,13 +233,13 @@ const getRequesterDisplayName = (requester) =>
     requester?.displayName ||
       requester?.display_name ||
       requester?.email ||
-      "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn",
+      "Quản trị viên",
   );
 
 const validateAdminReportType = (type) => {
   const normalizedType = normalizeText(type).toLowerCase();
   if (!ADMIN_REPORT_TYPES.has(normalizedType)) {
-    throw new Error("Lo?i bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng h?p l?.");
+    throw new Error("Loại báo cáo không hợp lệ.");
   }
   return normalizedType;
 };
@@ -1028,8 +1028,8 @@ const reportChapterComment = async ({ commentId, requester, reason, description 
       storyId: comment.chapter?.story?.id ?? null,
       chapterId: comment.chapter?.id ?? null,
       type: "admin_message",
-      title: "Ben minh da nhan duoc bao cao cua ban",
-      body: "Doi ngu dang xem xet bao cao. Ben minh se gui ket qua cho ban som.",
+      title: "Bên mình đã nhận được báo cáo của bạn",
+      body: "Đội ngũ đang xem xét báo cáo. Bên mình sẽ gửi kết quả cho bạn sớm.",
       linkUrl: buildReportTargetLink({
         type: "chapter_comment",
         storySlug: comment.chapter?.story?.slug,
@@ -1096,8 +1096,8 @@ const reportChapterComment = async ({ commentId, requester, reason, description 
     storyId: comment.chapter?.story?.id ?? null,
     chapterId: comment.chapter?.id ?? null,
     type: "admin_message",
-    title: "Ben minh da nhan duoc bao cao cua ban",
-    body: "Doi ngu dang xem xet bao cao. Ben minh se gui ket qua cho ban som.",
+    title: "Bên mình đã nhận được báo cáo của bạn",
+    body: "Đội ngũ đang xem xét báo cáo. Bên mình sẽ gửi kết quả cho bạn sớm.",
     linkUrl: buildReportTargetLink({
       type: "chapter_comment",
       storySlug: comment.chapter?.story?.slug,
@@ -1194,8 +1194,8 @@ const reportStory = async ({ storyId, requester, reason, description }) => {
       storyId: story.id,
       chapterId: null,
       type: "admin_message",
-      title: "Ben minh da nhan duoc bao cao cua ban",
-      body: "Doi ngu dang xem xet bao cao. Ben minh se gui ket qua cho ban som.",
+      title: "Bên mình đã nhận được báo cáo của bạn",
+      body: "Đội ngũ đang xem xét báo cáo. Bên mình sẽ gửi kết quả cho bạn sớm.",
       linkUrl: buildReportTargetLink({
         type: "story",
         storySlug: story.slug,
@@ -1262,8 +1262,8 @@ const reportStory = async ({ storyId, requester, reason, description }) => {
     storyId: story.id,
     chapterId: null,
     type: "admin_message",
-    title: "Ben minh da nhan duoc bao cao cua ban",
-    body: "Doi ngu dang xem xet bao cao. Ben minh se gui ket qua cho ban som.",
+    title: "Bên mình đã nhận được báo cáo của bạn",
+    body: "Đội ngũ đang xem xét báo cáo. Bên mình sẽ gửi kết quả cho bạn sớm.",
     linkUrl: buildReportTargetLink({
       type: "story",
       storySlug: story.slug,
@@ -1360,8 +1360,8 @@ const reportChapter = async ({ chapterId, requester, reason, description }) => {
       storyId: chapter.story?.id ?? null,
       chapterId: chapter.id,
       type: "admin_message",
-      title: "Ben minh da nhan duoc bao cao cua ban",
-      body: "Doi ngu dang xem xet bao cao. Ben minh se gui ket qua cho ban som.",
+      title: "Bên mình đã nhận được báo cáo của bạn",
+      body: "Đội ngũ đang xem xét báo cáo. Bên mình sẽ gửi kết quả cho bạn sớm.",
       linkUrl: buildReportTargetLink({
         type: "chapter",
         storySlug: chapter.story?.slug,
@@ -1428,8 +1428,8 @@ const reportChapter = async ({ chapterId, requester, reason, description }) => {
     storyId: chapter.story?.id ?? null,
     chapterId: chapter.id,
     type: "admin_message",
-    title: "Ben minh da nhan duoc bao cao cua ban",
-    body: "Doi ngu dang xem xet bao cao. Ben minh se gui ket qua cho ban som.",
+    title: "Bên mình đã nhận được báo cáo của bạn",
+    body: "Đội ngũ đang xem xét báo cáo. Bên mình sẽ gửi kết quả cho bạn sớm.",
     linkUrl: buildReportTargetLink({
       type: "chapter",
       storySlug: chapter.story?.slug,
@@ -1662,12 +1662,12 @@ const updateChapterCommentModeration = async ({
       type: "admin_message",
       title:
         status === "removed"
-          ? "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c x? lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â½"
-          : "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t",
+          ? "Báo cáo bình luận của bạn đã được xử lý"
+          : "Báo cáo bình luận của bạn đã được xem xét",
       body:
         status === "removed"
-          ? "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ g? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n b? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o."
-          : "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t nhung chua g? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â y.",
+          ? "Quản trị viên đã gỡ bình luận bị báo cáo."
+          : "Quản trị viên đã xem xét nhưng chưa gỡ bình luận này.",
       linkUrl,
       meta: {
         audience: "reporter",
@@ -1692,8 +1692,8 @@ const updateChapterCommentModeration = async ({
       storyId: story?.id ?? null,
       chapterId: chapter?.id ?? null,
       type: "admin_message",
-      title: "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c g? sau khi x? lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â½",
-      body: "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ g? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?a b?n sau khi xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o.",
+      title: "Bình luận của bạn đã được gỡ sau khi xử lý",
+      body: "Quản trị viên đã gỡ bình luận của bạn sau khi xem xét báo cáo.",
       linkUrl,
       meta: {
         audience: "owner",
@@ -1822,12 +1822,12 @@ const updateChapterModeration = async ({
       type: "admin_message",
       title:
         status === "action_taken"
-          ? "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o chuong c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c x? lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â½"
-          : "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o chuong c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t",
+          ? "Báo cáo chương của bạn đã được xử lý"
+          : "Báo cáo chương của bạn đã được xem xét",
       body:
         status === "action_taken"
-          ? "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ ?n chuong b? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o."
-          : "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t nhung chua ?n chuong nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â y.",
+          ? "Quản trị viên đã ẩn chương bị báo cáo."
+          : "Quản trị viên đã xem xét nhưng chưa ẩn chương này.",
       linkUrl,
       meta: {
         audience: "reporter",
@@ -1851,8 +1851,8 @@ const updateChapterModeration = async ({
       storyId: story?.id ?? null,
       chapterId: chapter?.id ?? null,
       type: "admin_message",
-      title: "Chuong c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c t?m ?n",
-      body: "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ ?n chuong c?a b?n sau khi xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o.",
+      title: "Chương của bạn đã được tạm ẩn",
+      body: "Quản trị viên đã ẩn chương của bạn sau khi xem xét báo cáo.",
       linkUrl,
       meta: {
         audience: "owner",
@@ -1972,12 +1972,12 @@ const updateStoryModeration = async ({
       type: "admin_message",
       title:
         status === "action_taken"
-          ? "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o truy?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c x? lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â½"
-          : "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o truy?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t",
+          ? "Báo cáo truyện của bạn đã được xử lý"
+          : "Báo cáo truyện của bạn đã được xem xét",
       body:
         status === "action_taken"
-          ? "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ ?n truy?n b? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o."
-          : "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t nhung chua ?n truy?n nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â y.",
+          ? "Quản trị viên đã ẩn truyện bị báo cáo."
+          : "Quản trị viên đã xem xét nhưng chưa ẩn truyện này.",
       linkUrl,
       meta: {
         audience: "reporter",
@@ -1998,8 +1998,8 @@ const updateStoryModeration = async ({
       actorId: requester.id,
       storyId: story?.id ?? null,
       type: "admin_message",
-      title: "Truy?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c t?m ?n",
-      body: "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ ?n truy?n c?a b?n sau khi xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o.",
+      title: "Truyện của bạn đã được tạm ẩn",
+      body: "Quản trị viên đã ẩn truyện của bạn sau khi xem xét báo cáo.",
       linkUrl,
       meta: {
         audience: "owner",
@@ -2213,14 +2213,14 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
         },
       },
     });
-    if (!comment) throw new Error("KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬m th?y bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n.");
+    if (!comment) throw new Error("Không tìm thấy bình luận.");
     return {
       ownerId: comment.userId,
       isHidden: comment.isHidden,
       storyId: comment.chapter?.story?.id ?? null,
       chapterId: comment.chapterId,
-      title: "KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ng ngh? bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c ti?p nh?n",
-      body: "Doi ngu dang xem xet va se gui ket qua cho ban som.",
+      title: "Khiếu nại bình luận đã được tiếp nhận",
+      body: "Đội ngũ đang xem xét và sẽ gửi kết quả cho bạn sớm.",
       linkUrl:
         comment.chapter?.story?.slug && comment.chapter?.id
           ? `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`
@@ -2259,14 +2259,14 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
         },
       },
     });
-    if (!chapter) throw new Error("KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬m th?y chuong.");
+    if (!chapter) throw new Error("Không tìm thấy chương.");
     return {
       ownerId: chapter.story?.authorId ?? null,
       isHidden: chapter.isHidden,
       storyId: chapter.story?.id ?? null,
       chapterId: chapter.id,
-      title: "KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ng ngh? chuong dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c ti?p nh?n",
-      body: "Doi ngu dang xem xet va se gui ket qua cho ban som.",
+      title: "Khiếu nại chương đã được tiếp nhận",
+      body: "Đội ngũ đang xem xét và sẽ gửi kết quả cho bạn sớm.",
       linkUrl:
         chapter.story?.slug && chapter.id
           ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
@@ -2295,14 +2295,14 @@ const getReportCaseOwnerContext = async ({ db = prisma, reportCase }) => {
       isHidden: true,
     },
   });
-  if (!story) throw new Error("KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬m th?y truy?n.");
+  if (!story) throw new Error("Không tìm thấy truyện.");
   return {
     ownerId: story.authorId,
     isHidden: story.isHidden,
     storyId: story.id,
     chapterId: null,
-    title: "KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ng ngh? truy?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c ti?p nh?n",
-    body: "Doi ngu dang xem xet va se gui ket qua cho ban som.",
+    title: "Khiếu nại truyện đã được tiếp nhận",
+    body: "Đội ngũ đang xem xét và sẽ gửi kết quả cho bạn sớm.",
     linkUrl: story.slug ? `/stories/${story.slug}` : null,
     meta: {
       case_id: reportCase.id,
@@ -2489,14 +2489,14 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
           },
         },
       });
-      if (!comment) throw new Error("KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬m th?y bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?n khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´i ph?c.");
+      if (!comment) throw new Error("Không tìm thấy bình luận cần khôi phục.");
       notificationPayload = {
         recipientId: comment.userId,
         storyId: comment.chapter?.story?.id ?? null,
         chapterId: comment.chapterId,
-        title: "BÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´i ph?c",
+        title: "Bình luận của bạn đã được khôi phục",
         body:
-          "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t l?i vÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  hi?n th? l?i bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬nh lu?n c?a b?n. C?m on b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ kiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn nh?n trong lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºc n?i dung du?c rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  soÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡t.",
+          "Quản trị viên đã xem xét lại và hiển thị lại bình luận của bạn. Cảm ơn bạn đã kiên nhẫn trong lúc nội dung được rà soát.",
         linkUrl:
           comment.chapter?.story?.slug && comment.chapter?.id
             ? `/stories/${comment.chapter.story.slug}/chapters/${comment.chapter.id}`
@@ -2564,14 +2564,14 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
           },
         },
       });
-      if (!chapter) throw new Error("KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬m th?y chuong c?n khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´i ph?c.");
+      if (!chapter) throw new Error("Không tìm thấy chương cần khôi phục.");
       notificationPayload = {
         recipientId: chapter.story?.authorId ?? null,
         storyId: chapter.story?.id ?? null,
         chapterId: chapter.id,
-        title: "Chuong c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´i ph?c",
+        title: "Chương của bạn đã được khôi phục",
         body:
-          "Chuong dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ hi?n th? tr? l?i sau khi qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t l?i v? vi?c.",
+          "Chương đã hiển thị trở lại sau khi quản trị viên xem xét lại vụ việc.",
         linkUrl:
           chapter.story?.slug && chapter.id
             ? `/stories/${chapter.story.slug}/chapters/${chapter.id}`
@@ -2609,14 +2609,14 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
           authorId: true,
         },
       });
-      if (!story) throw new Error("KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¬m th?y truy?n c?n khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´i ph?c.");
+      if (!story) throw new Error("Không tìm thấy truyện cần khôi phục.");
       notificationPayload = {
         recipientId: story.authorId,
         storyId: story.id,
         chapterId: null,
-        title: "Truy?n c?a b?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ du?c khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´i ph?c",
+        title: "Truyện của bạn đã được khôi phục",
         body:
-          "Truy?n dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ hi?n th? tr? l?i sau khi qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t l?i v? vi?c.",
+          "Truyện đã hiển thị trở lại sau khi quản trị viên xem xét lại vụ việc.",
         linkUrl: story.slug ? `/stories/${story.slug}` : null,
         meta: {
           case_id: reportCase.id,
@@ -2778,9 +2778,9 @@ const resolveReportCaseAppeal = async ({ caseId, action, requester }) => {
       storyId: notificationPayload.storyId,
       chapterId: notificationPayload.chapterId,
       type: "admin_message",
-      title: "KhÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ng ngh? chua du?c ch?p nh?n",
+      title: "Khiếu nại chưa được chấp nhận",
       body:
-        "Qu?n tr? viÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£ xem xÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©t khÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ng ngh? vÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  gi? nguyÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªn quy?t d?nh x? lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â½ tru?c dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³.",
+        "Quản trị viên đã xem xét khiếu nại và giữ nguyên quyết định xử lý trước đó.",
       linkUrl: notificationPayload.linkUrl,
       meta: {
         ...notificationPayload.meta,

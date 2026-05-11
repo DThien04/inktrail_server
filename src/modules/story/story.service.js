@@ -2024,8 +2024,7 @@ const updateStory = async ({
     story.status !== "published" &&
     updatedStory.status === "published" &&
     updatedStory.moderationStatus === "approved" &&
-    !updatedStory.isHidden &&
-    updatedStory.publishedAt
+    !updatedStory.isHidden
   ) {
     await notificationService.notifyFollowersAboutStoryPublished({
       authorId: updatedStory.authorId,

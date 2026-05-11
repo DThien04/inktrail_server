@@ -36,6 +36,7 @@ model User {
   storyRatings          StoryRating[]
   readSessions          StoryReadSession[]
   storyReports          StoryReport[]
+  adminBroadcastLogs    AdminBroadcastLog[]
 
   @@map("users")
 }
@@ -463,6 +464,21 @@ model Notification {
   @@index([storyId])
   @@index([chapterId])
   @@map("notifications")
+}
+
+model AdminBroadcastLog {
+  id             String   @id @default(uuid())
+  actorId        String   @map("actor_id")
+  title          String
+  body           String   @db.Text
+  totalAccounts  Int      @map("total_accounts")
+  createdCount   Int      @map("created_count")
+  failedCount    Int      @map("failed_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  actor          User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("admin_broadcast_logs")
 }
 
 model Announcement {

@@ -1,11 +1,26 @@
 const prisma = require("../../config/prisma");
-const { emitNotificationToUser } = require("../../realtime/socket");
-const { sendPushToUser } = require("./onesignal-push.service");
+const { emitNotificationToUser, emitAdminBroadcastPublic } = require("../../realtime/socket");
+const {
+  sendPushToUser,
+  sendPushToPublishPublicAudience,
+} = require("./onesignal-push.service");
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
-const FOLLOWER_NOTIFY_BATCH_SIZE = 200;
+/**
+ * Thông báo follower: tuần tự từng người (tránh dồn Prisma/socket).
+ * Cứ N bản ghi nhường event loop — không cần hàng đợi Redis.
+ */
+const FOLLOWER_NOTIFY_YIELD_INTERVAL = 25;
+const ADMIN_PUSH_BATCH_SIZE = 40;
+const BROADCAST_LOG_DEFAULT_PAGE_SIZE = 20;
+const BROADCAST_LOG_MAX_PAGE_SIZE = 100;
+const PUBLIC_BROADCAST_LOG_MAX = 50;
 const CHAPTER_COMMENT_NOTIFICATION_TYPE = "chapter_commented";
+const PUSH_NOTIFICATION_TYPES = new Set([
+  "chapter_published",
+  "story_published",
+]);
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   "system",
   "chapter_liked",
@@ -49,7 +64,7 @@ const parseLimit = (value) => {
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("Giá»›i háº¡n phÃ¢n trang khÃ´ng há»£p lá»‡.");
+    throw new Error("Giới hạn phân trang không hợp lệ.");
   }
 
   return Math.min(parsed, MAX_LIMIT);
@@ -61,12 +76,25 @@ const normalizeOptionalString = (value) => {
   return normalized || null;
 };
 
+const extractStorySlugFromLinkUrl = (linkUrl) => {
+  const raw = normalizeOptionalString(linkUrl);
+  if (!raw) return null;
+  const segments = raw
+    .split("/")
+    .map((segment) => String(segment || "").trim())
+    .filter(Boolean);
+  if (segments.length >= 2 && segments[0] === "stories") {
+    return segments[1];
+  }
+  return null;
+};
+
 const parseBoolean = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
   if (value === "false") return false;
-  throw new Error("Tham sá»‘ chá»‰ Ä‘Ãºng/sai khÃ´ng há»£p lá»‡.");
+  throw new Error("Tham số chỉ đúng/sai không hợp lệ.");
 };
 
 const ensureUserExists = async (userId, message) => {
@@ -88,7 +116,7 @@ const ensureStoryExists = async (storyId) => {
     select: { id: true },
   });
 
-  if (!story) throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n.");
+  if (!story) throw new Error("Không tìm thấy truyện.");
 };
 
 const ensureChapterExists = async (chapterId) => {
@@ -99,15 +127,18 @@ const ensureChapterExists = async (chapterId) => {
     select: { id: true, storyId: true },
   });
 
-  if (!chapter) throw new Error("KhÃ´ng tÃ¬m tháº¥y chÆ°Æ¡ng.");
+  if (!chapter) throw new Error("Không tìm thấy chương.");
   return chapter;
 };
 
 const validateNotificationType = (type) => {
   if (!ALLOWED_NOTIFICATION_TYPES.has(type)) {
-    throw new Error("Loáº¡i thÃ´ng bÃ¡o khÃ´ng há»£p lá»‡.");
+    throw new Error("Loại thông báo không hợp lệ.");
   }
 };
+
+const shouldSendPushNotification = (type) =>
+  PUSH_NOTIFICATION_TYPES.has(type);
 
 const formatNotification = (notification) => ({
   id: notification.id,
@@ -188,6 +219,7 @@ const getUnreadCount = async ({ userId }) => {
     where: {
       recipientId: userId,
       isRead: false,
+      type: { not: "admin_message" },
     },
   });
 
@@ -206,7 +238,7 @@ const markAsRead = async ({ userId, notificationId }) => {
     },
   });
 
-  if (!existing) throw new Error("KhÃ´ng tÃ¬m tháº¥y thÃ´ng bÃ¡o.");
+  if (!existing) throw new Error("Không tìm thấy thông báo.");
 
   const notification = await prisma.notification.update({
     where: { id: notificationId },
@@ -235,7 +267,7 @@ const markAllAsRead = async ({ userId }) => {
   });
 
   return {
-    message: "ÄÃ£ Ä‘Ã¡nh dáº¥u táº¥t cáº£ thÃ´ng bÃ¡o lÃ  Ä‘Ã£ Ä‘á»c.",
+    message: "Đã đánh dấu tất cả thông báo là đã đọc.",
     updated_count: result.count,
   };
 };
@@ -250,6 +282,7 @@ const createNotification = async ({
   body,
   linkUrl,
   meta,
+  sendPush,
 }) => {
   const normalizedRecipientId = normalizeOptionalString(recipientId);
   const normalizedActorId = normalizeOptionalString(actorId);
@@ -258,13 +291,13 @@ const createNotification = async ({
   const normalizedType = normalizeOptionalString(type);
   const normalizedTitle = normalizeOptionalString(title);
 
-  if (!normalizedRecipientId) throw new Error("Vui lÃ²ng kiá»ƒm tra láº¡i thÃ´ng tin Ä‘Ã£ nháº­p.");
-  if (!normalizedType) throw new Error("Vui lÃ²ng kiá»ƒm tra láº¡i thÃ´ng tin Ä‘Ã£ nháº­p.");
-  if (!normalizedTitle) throw new Error("Vui lÃ²ng kiá»ƒm tra láº¡i thÃ´ng tin Ä‘Ã£ nháº­p.");
+  if (!normalizedRecipientId) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
+  if (!normalizedType) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
+  if (!normalizedTitle) throw new Error("Vui lòng kiểm tra lại thông tin đã nhập.");
   validateNotificationType(normalizedType);
 
-  await ensureUserExists(normalizedRecipientId, "KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i nháº­n thÃ´ng bÃ¡o.");
-  await ensureUserExists(normalizedActorId, "KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i thá»±c hiá»‡n hÃ nh Ä‘á»™ng.");
+  await ensureUserExists(normalizedRecipientId, "Không tìm thấy người nhận thông báo.");
+  await ensureUserExists(normalizedActorId, "Không tìm thấy người thực hiện hành động.");
   await ensureStoryExists(normalizedStoryId);
   const chapter = await ensureChapterExists(normalizedChapterId);
   if (
@@ -272,7 +305,7 @@ const createNotification = async ({
     normalizedStoryId &&
     chapter.storyId !== normalizedStoryId
   ) {
-    throw new Error("ThÃ´ng tin chÆ°Æ¡ng vÃ  truyá»‡n khÃ´ng khá»›p.");
+    throw new Error("Thông tin chương và truyện không khớp.");
   }
 
   const notification = await prisma.notification.create({
@@ -293,32 +326,259 @@ const createNotification = async ({
   const payload = formatNotification(notification);
   emitNotificationToUser(normalizedRecipientId, payload);
 
+  const wantPush =
+    sendPush === true
+      ? true
+      : sendPush === false
+        ? false
+        : shouldSendPushNotification(payload.type);
+
+  if (wantPush) {
+    try {
+      await sendPushToUser({
+        userId: normalizedRecipientId,
+        title: payload.title,
+        body: payload.body,
+        data: {
+          id: payload.id,
+          type: payload.type,
+          link_url: payload.link_url,
+          story_slug:
+            normalizeOptionalString(payload?.meta?.story_slug) ||
+            extractStorySlugFromLinkUrl(payload.link_url),
+          story_id: payload.story_id,
+          chapter_id: payload.chapter_id,
+          meta: payload.meta,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "[onesignal-push:error]",
+        JSON.stringify({
+          recipient_id: normalizedRecipientId,
+          notification_id: payload.id,
+          message: error?.message || String(error),
+        }),
+      );
+    }
+  }
+
+  return payload;
+};
+
+const getAllRegisteredUserIds = async () => {
+  const rows = await prisma.user.findMany({
+    select: { id: true },
+  });
+  return rows.map((r) => normalizeOptionalString(r.id)).filter(Boolean);
+};
+
+const adminSendNotifications = async ({
+  currentUser,
+  title,
+  body,
+}) => {
+  if (normalizeOptionalString(currentUser?.role) !== "admin") {
+    throw new Error("Chỉ quản trị viên mới được thực hiện thao tác này.");
+  }
+
+  const normalizedTitle = normalizeOptionalString(title);
+  const normalizedBody = normalizeOptionalString(body);
+  if (!normalizedTitle) throw new Error("Vui lòng nhập tiêu đề.");
+  if (!normalizedBody) throw new Error("Vui lòng nhập nội dung.");
+
+  const ids = await getAllRegisteredUserIds();
+
+  const actorId = normalizeOptionalString(currentUser.id);
+  if (!actorId) throw new Error("Phiên đăng nhập không hợp lệ.");
+
+  const failures = [];
+  let created = 0;
+
+  for (let i = 0; i < ids.length; i += ADMIN_PUSH_BATCH_SIZE) {
+    const chunk = ids.slice(i, i + ADMIN_PUSH_BATCH_SIZE);
+    const settled = await Promise.allSettled(
+      chunk.map((recipientId) =>
+        createNotification({
+          recipientId,
+          actorId,
+          type: "admin_message",
+          title: normalizedTitle,
+          body: normalizedBody,
+          linkUrl: null,
+          meta: null,
+          sendPush: false,
+        }),
+      ),
+    );
+
+    settled.forEach((result, idx) => {
+      const rid = chunk[idx];
+      if (result.status === "fulfilled") {
+        created += 1;
+      } else {
+        const message =
+          result.reason?.message ||
+          String(result.reason || "Lỗi không xác định");
+        failures.push({ recipient_id: rid, message });
+      }
+    });
+  }
+
   try {
-    await sendPushToUser({
-      userId: normalizedRecipientId,
-      title: payload.title,
-      body: payload.body,
+    await sendPushToPublishPublicAudience({
+      title: normalizedTitle,
+      body: normalizedBody,
       data: {
-        id: payload.id,
-        type: payload.type,
-        link_url: payload.link_url,
-        story_id: payload.story_id,
-        chapter_id: payload.chapter_id,
-        meta: payload.meta,
+        type: "admin_message",
       },
     });
   } catch (error) {
     console.error(
-      "[onesignal-push:error]",
+      "[onesignal-push:publish-public]",
       JSON.stringify({
-        recipient_id: normalizedRecipientId,
-        notification_id: payload.id,
         message: error?.message || String(error),
       }),
     );
   }
 
-  return payload;
+  try {
+    const row = await prisma.adminBroadcastLog.create({
+      data: {
+        actorId,
+        title: normalizedTitle,
+        body: normalizedBody,
+        totalAccounts: ids.length,
+        createdCount: created,
+        failedCount: failures.length,
+      },
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        createdAt: true,
+      },
+    });
+    emitAdminBroadcastPublic({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      created_at: row.createdAt,
+    });
+  } catch (error) {
+    console.error(
+      "[admin-broadcast-log:create]",
+      JSON.stringify({
+        message: error?.message || String(error),
+      }),
+    );
+  }
+
+  return {
+    summary: {
+      total: ids.length,
+      created,
+      failed: failures.length,
+    },
+    failures: failures.slice(0, 50),
+  };
+};
+
+const listAdminBroadcastLogs = async ({ query, sort, order, page, pageSize }) => {
+  const keyword = normalizeOptionalString(query);
+  const rawPage = Number(page);
+  const rawSize = Number(pageSize);
+  const safePage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const safeSize =
+    Number.isInteger(rawSize) && rawSize > 0
+      ? Math.min(rawSize, BROADCAST_LOG_MAX_PAGE_SIZE)
+      : BROADCAST_LOG_DEFAULT_PAGE_SIZE;
+
+  const sortKey = (normalizeOptionalString(sort) || "created_at").toLowerCase();
+  const orderDir = normalizeOptionalString(order)?.toLowerCase() === "asc" ? "asc" : "desc";
+
+  const sortMap = {
+    created_at: "createdAt",
+    title: "title",
+    total_accounts: "totalAccounts",
+    created_count: "createdCount",
+    failed_count: "failedCount",
+  };
+  const prismaField = sortMap[sortKey] || "createdAt";
+
+  const where = keyword
+    ? {
+        OR: [
+          { title: { contains: keyword, mode: "insensitive" } },
+          { body: { contains: keyword, mode: "insensitive" } },
+        ],
+      }
+    : {};
+
+  const [total, rows] = await Promise.all([
+    prisma.adminBroadcastLog.count({ where }),
+    prisma.adminBroadcastLog.findMany({
+      where,
+      orderBy: { [prismaField]: orderDir },
+      skip: (safePage - 1) * safeSize,
+      take: safeSize,
+      include: {
+        actor: {
+          select: { id: true, displayName: true, email: true },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      created_at: row.createdAt,
+      total_accounts: row.totalAccounts,
+      created_count: row.createdCount,
+      failed_count: row.failedCount,
+      actor: row.actor
+        ? {
+            id: row.actor.id,
+            display_name: row.actor.displayName,
+            email: row.actor.email,
+          }
+        : null,
+    })),
+    total,
+    page: safePage,
+    page_size: safeSize,
+  };
+};
+
+const listPublicAdminBroadcastLogs = async ({ limit }) => {
+  const raw = Number(limit);
+  const take =
+    Number.isInteger(raw) && raw > 0
+      ? Math.min(raw, PUBLIC_BROADCAST_LOG_MAX)
+      : 30;
+
+  const rows = await prisma.adminBroadcastLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take,
+    select: {
+      id: true,
+      title: true,
+      body: true,
+      createdAt: true,
+    },
+  });
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      created_at: row.createdAt,
+    })),
+  };
 };
 
 const createTestNotification = async ({
@@ -343,8 +603,8 @@ const createTestNotification = async ({
     storyId,
     chapterId,
     type: type || "system",
-    title: title || "ThÃ´ng bÃ¡o thá»­ nghiá»‡m",
-    body: body || "ÄÃ¢y lÃ  thÃ´ng bÃ¡o thá»­ gá»­i realtime tá»›i tÃ i khoáº£n cá»§a báº¡n.",
+    title: title || "Thông báo thử nghiệm",
+    body: body || "Đây là thông báo thử gửi realtime tới tài khoản của bạn.",
     linkUrl,
     meta,
   });
@@ -367,6 +627,24 @@ const getFollowerRecipientIds = async ({ authorId }) => {
     ),
   ];
 };
+
+async function createFollowerNotificationsSequential(targets, factory) {
+  for (let index = 0; index < targets.length; index += 1) {
+    const recipientId = targets[index];
+    try {
+      await factory(recipientId);
+    } catch (_err) {
+      // Giống Promise.allSettled rejected: bỏ qua lỗi từng người.
+    }
+    const done = index + 1;
+    if (
+      done % FOLLOWER_NOTIFY_YIELD_INTERVAL === 0 &&
+      done < targets.length
+    ) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+}
 
 const notifyFollowersAboutStoryPublished = async ({
   authorId,
@@ -396,27 +674,23 @@ const notifyFollowersAboutStoryPublished = async ({
   const targets = recipientIds.filter((id) => !notifiedRecipientIds.has(id));
   if (!targets.length) return;
 
-  for (let i = 0; i < targets.length; i += FOLLOWER_NOTIFY_BATCH_SIZE) {
-    const chunk = targets.slice(i, i + FOLLOWER_NOTIFY_BATCH_SIZE);
-    await Promise.allSettled(
-      chunk.map((recipientId) =>
-        createNotification({
-          recipientId,
-          actorId: normalizedAuthorId,
-          storyId: normalizedStoryId,
-          type: "story_published",
-          title: "TÃ¡c giáº£ báº¡n theo dÃµi vá»«a Ä‘Äƒng truyá»‡n má»›i",
-          body: normalizeOptionalString(storyTitle) || "CÃ³ má»™t truyá»‡n má»›i vá»«a Ä‘Æ°á»£c xuáº¥t báº£n.",
-          linkUrl: storySlug ? `/stories/${storySlug}` : null,
-          meta: {
-            author_id: normalizedAuthorId,
-            story_id: normalizedStoryId,
-            story_title: normalizeOptionalString(storyTitle),
-          },
-        }),
-      ),
-    );
-  }
+  await createFollowerNotificationsSequential(targets, (recipientId) =>
+    createNotification({
+      recipientId,
+      actorId: normalizedAuthorId,
+      storyId: normalizedStoryId,
+      type: "story_published",
+      title: "Tác giả bạn theo dõi vừa đăng truyện mới",
+      body: normalizeOptionalString(storyTitle) || "Có một truyện mới vừa được xuất bản.",
+      linkUrl: storySlug ? `/stories/${storySlug}` : null,
+      meta: {
+        author_id: normalizedAuthorId,
+        story_id: normalizedStoryId,
+        story_slug: normalizeOptionalString(storySlug),
+        story_title: normalizeOptionalString(storyTitle),
+      },
+    }),
+  );
 };
 
 const notifyFollowersAboutChapterPublished = async ({
@@ -453,43 +727,39 @@ const notifyFollowersAboutChapterPublished = async ({
 
   const chapterLabel =
     Number.isInteger(chapterNumber) && chapterNumber > 0
-      ? `ChÆ°Æ¡ng ${chapterNumber}`
-      : "ChÆ°Æ¡ng má»›i";
+      ? `Chương ${chapterNumber}`
+      : "Chương mới";
   const defaultBody = [chapterLabel, normalizeOptionalString(chapterTitle)]
     .filter(Boolean)
     .join(": ");
 
-  for (let i = 0; i < targets.length; i += FOLLOWER_NOTIFY_BATCH_SIZE) {
-    const chunk = targets.slice(i, i + FOLLOWER_NOTIFY_BATCH_SIZE);
-    await Promise.allSettled(
-      chunk.map((recipientId) =>
-        createNotification({
-          recipientId,
-          actorId: normalizedAuthorId,
-          storyId: normalizedStoryId,
-          chapterId: normalizedChapterId,
-          type: "chapter_published",
-          title: "TÃ¡c giáº£ báº¡n theo dÃµi vá»«a ra chÆ°Æ¡ng má»›i",
-          body: defaultBody || "CÃ³ chÆ°Æ¡ng má»›i vá»«a Ä‘Æ°á»£c xuáº¥t báº£n.",
-          linkUrl:
-            storySlug && normalizedChapterId
-              ? `/stories/${storySlug}/chapters/${normalizedChapterId}`
-              : null,
-          meta: {
-            author_id: normalizedAuthorId,
-            story_id: normalizedStoryId,
-            story_title: normalizeOptionalString(storyTitle),
-            chapter_id: normalizedChapterId,
-            chapter_number:
-              Number.isInteger(chapterNumber) && chapterNumber > 0
-                ? chapterNumber
-                : null,
-            chapter_title: normalizeOptionalString(chapterTitle),
-          },
-        }),
-      ),
-    );
-  }
+  await createFollowerNotificationsSequential(targets, (recipientId) =>
+    createNotification({
+      recipientId,
+      actorId: normalizedAuthorId,
+      storyId: normalizedStoryId,
+      chapterId: normalizedChapterId,
+      type: "chapter_published",
+      title: "Tác giả bạn theo dõi vừa ra chương mới",
+      body: defaultBody || "Có chương mới vừa được xuất bản.",
+      linkUrl:
+        storySlug && normalizedChapterId
+          ? `/stories/${storySlug}/chapters/${normalizedChapterId}`
+          : null,
+      meta: {
+        author_id: normalizedAuthorId,
+        story_id: normalizedStoryId,
+        story_slug: normalizeOptionalString(storySlug),
+        story_title: normalizeOptionalString(storyTitle),
+        chapter_id: normalizedChapterId,
+        chapter_number:
+          Number.isInteger(chapterNumber) && chapterNumber > 0
+            ? chapterNumber
+            : null,
+        chapter_title: normalizeOptionalString(chapterTitle),
+      },
+    }),
+  );
 };
 
 module.exports = {
@@ -499,6 +769,9 @@ module.exports = {
   markAllAsRead,
   createNotification,
   createTestNotification,
+  adminSendNotifications,
+  listAdminBroadcastLogs,
+  listPublicAdminBroadcastLogs,
   notifyFollowersAboutStoryPublished,
   notifyFollowersAboutChapterPublished,
 };

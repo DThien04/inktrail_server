@@ -34,11 +34,7 @@ const STORY_PROFANITY_PHRASES = [
   "lonme",
   "con cac",
   "concac",
-  "cac",
-  "buoi",
-  "chim",
   "loz",
-  "lol",
   "vcl",
   "vl",
   "vai lon",
@@ -50,6 +46,16 @@ const STORY_PROFANITY_PHRASES = [
   "cho chet",
   "chet me",
 ];
+
+const hasProfanity = ({ title, description, normalizeText }) => {
+  const titleText = normalizeForKeywordMatch(title, normalizeText);
+  const descriptionText = normalizeForKeywordMatch(description, normalizeText);
+  const haystack = ` ${titleText} ${descriptionText} `.replace(/\s+/g, " ");
+
+  return STORY_PROFANITY_PHRASES.some((phrase) =>
+    haystack.includes(` ${phrase} `),
+  );
+};
 
 const hasSuspiciousUrlInTitle = (title) =>
   /\bhttps?:\/\//i.test(title) || /\bwww\.\S+/i.test(title);
@@ -166,12 +172,8 @@ const STORY_PUBLISH_RULES = [
     message:
       "Phát hiện từ ngữ tục tĩu/công kích trong tiêu đề hoặc mô tả; bạn vui lòng chỉnh sửa trước khi xuất bản.",
     severity: "hard",
-    validate: ({ title, description, normalizeText }) => {
-      const titleText = normalizeForKeywordMatch(title, normalizeText);
-      const descriptionText = normalizeForKeywordMatch(description, normalizeText);
-      const haystack = `${titleText} ${descriptionText}`.trim();
-      return !STORY_PROFANITY_PHRASES.some((phrase) => haystack.includes(phrase));
-    },
+    validate: ({ title, description, normalizeText }) =>
+      !hasProfanity({ title, description, normalizeText }),
   },
 ];
 

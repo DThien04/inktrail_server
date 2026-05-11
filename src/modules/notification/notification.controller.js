@@ -76,10 +76,56 @@ const createTestNotification = async (req, res) => {
   }
 };
 
+const adminSendPushNotifications = async (req, res) => {
+  try {
+    const result = await notificationService.adminSendNotifications({
+      currentUser: req.user,
+      title: req.body.title,
+      body: req.body.body,
+    });
+
+    res.status(201).json({
+      message: "Đã xử lý gửi thông báo từ quản trị.",
+      ...result,
+    });
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const listAdminBroadcastLogs = async (req, res) => {
+  try {
+    const result = await notificationService.listAdminBroadcastLogs({
+      query: req.query.query,
+      sort: req.query.sort,
+      order: req.query.order,
+      page: req.query.page,
+      pageSize: req.query.page_size,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const listPublicAdminBroadcastLogs = async (req, res) => {
+  try {
+    const result = await notificationService.listPublicAdminBroadcastLogs({
+      limit: req.query.limit,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 module.exports = {
   listMyNotifications,
   getMyUnreadCount,
   markMyNotificationAsRead,
   markAllMyNotificationsAsRead,
   createTestNotification,
+  adminSendPushNotifications,
+  listAdminBroadcastLogs,
+  listPublicAdminBroadcastLogs,
 };
