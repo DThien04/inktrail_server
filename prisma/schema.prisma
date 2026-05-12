@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -17,6 +18,11 @@ model User {
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
   bio                   String?                @map("bio")
+  isLocked              Boolean                @default(false) @map("is_locked")
+  lockedAt              DateTime?              @map("locked_at")
+  lockedById            String?                @map("locked_by_id")
+  lockedReason          String?                @map("locked_reason")
+  lockedUntil           DateTime?              @map("locked_until")
   authorFollowers       AuthorFollow[]         @relation("AuthorFollowers")
   followingAuthors      AuthorFollow[]         @relation("AuthorFollowing")
   chapterCommentLikes   ChapterCommentLike[]
@@ -37,8 +43,51 @@ model User {
   readSessions          StoryReadSession[]
   storyReports          StoryReport[]
   adminBroadcastLogs    AdminBroadcastLog[]
+  lockedBy              User?                  @relation("UserLockedBy", fields: [lockedById], references: [id])
+  lockedUsers           User[]                 @relation("UserLockedBy")
+  lockLogsAsActor       UserLockLog[]          @relation("LockLogActor")
+  lockLogs              UserLockLog[]          @relation("LockLogTarget")
+  lockedFromCases       ReportCase[]           @relation("ReportCaseLockedUser")
+  lockAppeals           UserLockAppeal[]       @relation("LockAppealUser")
+  resolvedLockAppeals   UserLockAppeal[]       @relation("LockAppealResolver")
 
+  @@index([isLocked, lockedUntil])
   @@map("users")
+}
+
+model UserLockLog {
+  id          String         @id @default(uuid())
+  userId      String         @map("user_id")
+  actorId     String         @map("actor_id")
+  action      UserLockAction
+  reason      String?
+  lockedUntil DateTime?      @map("locked_until")
+  caseId      String?        @map("case_id")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  user        User           @relation("LockLogTarget", fields: [userId], references: [id], onDelete: Cascade)
+  actor       User           @relation("LockLogActor", fields: [actorId], references: [id], onDelete: Cascade)
+  reportCase  ReportCase?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([caseId])
+  @@map("user_lock_logs")
+}
+
+model UserLockAppeal {
+  id           String                @id @default(uuid())
+  userId       String                @map("user_id")
+  reason       String                @db.Text
+  status       UserLockAppealStatus  @default(pending)
+  submittedAt  DateTime              @default(now()) @map("submitted_at")
+  resolvedAt   DateTime?             @map("resolved_at")
+  resolvedById String?               @map("resolved_by_id")
+  resolverNote String?               @map("resolver_note")
+  user         User                  @relation("LockAppealUser", fields: [userId], references: [id], onDelete: Cascade)
+  resolver     User?                 @relation("LockAppealResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, submittedAt])
+  @@index([status, submittedAt])
+  @@map("user_lock_appeals")
 }
 
 model AuthorFollow {
@@ -332,14 +381,19 @@ model ReportCase {
   appealAiRecommendation String?                 @map("appeal_ai_recommendation")
   appealAiConfidence     Float?                  @map("appeal_ai_confidence")
   appealAiCheckedAt      DateTime?               @map("appeal_ai_checked_at")
+  accountLockApplied     Boolean                 @default(false) @map("account_lock_applied")
+  accountLockedUserId    String?                 @map("account_locked_user_id")
   chapterCommentReports  ChapterCommentReport[]
   chapterReports         ChapterReport[]
   storyReports           StoryReport[]
+  lockedUser             User?                   @relation("ReportCaseLockedUser", fields: [accountLockedUserId], references: [id], onDelete: SetNull)
+  lockLogs               UserLockLog[]
 
   @@unique([targetType, targetId])
   @@index([status, lastReportedAt])
   @@index([targetType, status, updatedAt])
   @@index([priority, status, lastReportedAt])
+  @@index([accountLockApplied])
   @@map("report_cases")
 }
 
@@ -538,6 +592,19 @@ model StoryTag {
 enum Role {
   reader
   admin
+}
+
+enum UserLockAction {
+  lock
+  unlock
+  unlock_via_appeal
+  auto_unlock
+}
+
+enum UserLockAppealStatus {
+  pending
+  accepted
+  rejected
 }
 
 enum StoryStatus {

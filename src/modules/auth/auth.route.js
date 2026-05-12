@@ -9,5 +9,6 @@ router.post("/verify-reset-otp", authController.verifyResetOtp);
 router.post("/reset-password", authController.resetPassword);
 router.post("/refresh", authController.refresh);
 router.post("/logout", authController.logout);
+router.post("/lock-appeal", authController.submitLockAppeal);
 
 module.exports = router;

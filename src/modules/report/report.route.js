@@ -41,6 +41,13 @@ router.post(
 );
 
 router.post(
+  "/admin/cases/:caseId/lock-author",
+  authenticate,
+  authorize("admin"),
+  reportController.lockReportCaseAuthor,
+);
+
+router.post(
   "/admin/cases/:caseId/appeal/:action",
   authenticate,
   authorize("admin"),

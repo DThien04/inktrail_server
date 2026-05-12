@@ -29,6 +29,12 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   "story_published",
   "admin_message",
 ]);
+/**
+ * Các loại thông báo có giá trị với admin (hiển thị trong bell ở admin UI).
+ * Bỏ qua `admin_message` (broadcast do admin tự gửi), tương tác reader-driven
+ * (`chapter_liked`, `chapter_commented`) và các sự kiện xuất bản (`chapter_published`, `story_published`).
+ */
+const ADMIN_RELEVANT_NOTIFICATION_TYPES = new Set(["system"]);
 
 const notificationInclude = {
   actor: {
@@ -183,15 +189,25 @@ const formatNotification = (notification) => ({
     : null,
 });
 
-const listNotifications = async ({ userId, limit, cursor, unreadOnly }) => {
+const listNotifications = async ({
+  userId,
+  limit,
+  cursor,
+  unreadOnly,
+  forAdmin,
+}) => {
   const take = parseLimit(limit);
   const normalizedCursor = normalizeOptionalString(cursor);
   const onlyUnread = parseBoolean(unreadOnly, false);
+  const restrictForAdmin = parseBoolean(forAdmin, false);
 
   const notifications = await prisma.notification.findMany({
     where: {
       recipientId: userId,
       ...(onlyUnread ? { isRead: false } : {}),
+      ...(restrictForAdmin
+        ? { type: { in: Array.from(ADMIN_RELEVANT_NOTIFICATION_TYPES) } }
+        : {}),
     },
     include: notificationInclude,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -214,12 +230,15 @@ const listNotifications = async ({ userId, limit, cursor, unreadOnly }) => {
   };
 };
 
-const getUnreadCount = async ({ userId }) => {
+const getUnreadCount = async ({ userId, forAdmin }) => {
+  const restrictForAdmin = parseBoolean(forAdmin, false);
   const unreadCount = await prisma.notification.count({
     where: {
       recipientId: userId,
       isRead: false,
-      type: { not: "admin_message" },
+      ...(restrictForAdmin
+        ? { type: { in: Array.from(ADMIN_RELEVANT_NOTIFICATION_TYPES) } }
+        : { type: { not: "admin_message" } }),
     },
   });
 

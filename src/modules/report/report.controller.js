@@ -48,6 +48,8 @@ const processCriticalAdminReportCases = async (req, res) => {
   try {
     const result = await reportService.processCriticalAdminReportCases({
       requester: req.user,
+      lockAuthor: Boolean(req.body?.lock_author),
+      lockReason: req.body?.lock_reason ?? "",
     });
 
     res.status(200).json(result);
@@ -61,8 +63,24 @@ const restoreAdminReportCase = async (req, res) => {
     const result = await reportService.restoreAdminReportCase({
       caseId: req.params.caseId,
       requester: req.user,
+      unlockUser: Boolean(req.body?.unlock_user),
     });
 
+    res.status(200).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
+const lockReportCaseAuthor = async (req, res) => {
+  try {
+    const result = await reportService.lockReportCaseAuthor({
+      caseId: req.params.caseId,
+      requester: req.user,
+      reason: req.body?.reason,
+      lockedUntil: req.body?.locked_until,
+      alsoResolveContent: req.body?.also_resolve_content !== false,
+    });
     res.status(200).json(result);
   } catch (err) {
     handleError(err, res);
@@ -148,6 +166,7 @@ module.exports = {
   updateAdminReportStatus,
   processCriticalAdminReportCases,
   restoreAdminReportCase,
+  lockReportCaseAuthor,
   resolveReportCaseAppeal,
   submitReportCaseAppeal,
   reportStory,

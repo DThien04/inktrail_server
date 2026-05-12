@@ -12,5 +12,46 @@ router.get(
   userController.listAdminUsers,
 );
 
-module.exports = router;
+router.post(
+  "/admin/:id/lock",
+  authenticate,
+  authorize("admin"),
+  userController.lockUser,
+);
 
+router.post(
+  "/admin/:id/unlock",
+  authenticate,
+  authorize("admin"),
+  userController.unlockUser,
+);
+
+router.get(
+  "/admin/:id/lock-logs",
+  authenticate,
+  authorize("admin"),
+  userController.getUserLockLogs,
+);
+
+router.get(
+  "/admin/:id/violation-summary",
+  authenticate,
+  authorize("admin"),
+  userController.getUserViolationSummary,
+);
+
+router.get(
+  "/admin/lock-appeals",
+  authenticate,
+  authorize("admin"),
+  userController.listLockAppeals,
+);
+
+router.post(
+  "/admin/lock-appeals/:id/:action",
+  authenticate,
+  authorize("admin"),
+  userController.resolveLockAppeal,
+);
+
+module.exports = router;

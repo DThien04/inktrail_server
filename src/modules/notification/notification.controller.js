@@ -8,6 +8,7 @@ const listMyNotifications = async (req, res) => {
       limit: req.query.limit,
       cursor: req.query.cursor,
       unreadOnly: req.query.unread_only,
+      forAdmin: req.query.for_admin,
     });
     res.json(result);
   } catch (err) {
@@ -19,6 +20,7 @@ const getMyUnreadCount = async (req, res) => {
   try {
     const result = await notificationService.getUnreadCount({
       userId: req.user.id,
+      forAdmin: req.query.for_admin,
     });
     res.json(result);
   } catch (err) {

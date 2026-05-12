@@ -147,6 +147,16 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const submitLockAppeal = async (req, res) => {
+  try {
+    const { email, password, reason } = req.body || {};
+    const result = await authService.submitLockAppeal({ email, password, reason });
+    return res.status(201).json(result);
+  } catch (err) {
+    handleError(err, res);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -155,4 +165,5 @@ module.exports = {
   forgotPassword,
   verifyResetOtp,
   resetPassword,
+  submitLockAppeal,
 };

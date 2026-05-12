@@ -5,11 +5,62 @@ const prisma = require("../../config/prisma");
 const { jwt: jwtConfig } = require("../../config/jwt");
 const { randomUUID } = require("crypto");
 const { sendMail } = require("../../utils/mailer");
+const { LockedError } = require("../../utils/error_handle");
 
 const PASSWORD_RESET_OTP_TTL_MINUTES = 10;
 const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
 
 const normalizeEmail = (email = "") => email.trim().toLowerCase();
+
+const formatLockedUntilLabel = (date) => {
+  if (!date) return "Vĩnh viễn";
+  try {
+    return new Intl.DateTimeFormat("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(date));
+  } catch {
+    return "Vĩnh viễn";
+  }
+};
+
+const buildLockedMessage = (user) => {
+  const reason = user.lockedReason
+    ? `: ${user.lockedReason}`
+    : ".";
+  const until = `Mở khóa: ${formatLockedUntilLabel(user.lockedUntil)}.`;
+  return `Tài khoản đã bị khóa${reason} ${until}`;
+};
+
+const ensureUserNotLocked = async (user) => {
+  if (!user?.isLocked) return user;
+  const lockedUntil = user.lockedUntil ? new Date(user.lockedUntil) : null;
+  if (lockedUntil && lockedUntil.getTime() <= Date.now()) {
+    return prisma.user.update({
+      where: { id: user.id },
+      data: {
+        isLocked: false,
+        lockedAt: null,
+        lockedById: null,
+        lockedReason: null,
+        lockedUntil: null,
+      },
+    });
+  }
+  const pendingAppeal = await prisma.userLockAppeal.findFirst({
+    where: { userId: user.id, status: "pending" },
+    select: { id: true },
+  });
+  throw new LockedError(buildLockedMessage(user), {
+    userId: user.id,
+    lockedReason: user.lockedReason,
+    lockedUntil: user.lockedUntil,
+    hasPendingAppeal: Boolean(pendingAppeal),
+  });
+};
 
 const hashOtp = (otp) =>
   crypto.createHash("sha256").update(String(otp)).digest("hex");
@@ -120,11 +171,13 @@ const login = async ({ email, password }) => {
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new Error("Email hoặc mật khẩu chưa đúng.");
 
-  const { accessToken, refreshToken } = generateTokens(user);
-  await saveRefreshToken(user.id, refreshToken);
+  const activeUser = await ensureUserNotLocked(user);
+
+  const { accessToken, refreshToken } = generateTokens(activeUser);
+  await saveRefreshToken(activeUser.id, refreshToken);
 
   return {
-    user: formatUser(user),
+    user: formatUser(activeUser),
     accessToken,
     refreshToken,
   };
@@ -151,9 +204,17 @@ const refresh = async (token) => {
   });
   if (!user) throw new Error("Tài khoản không còn tồn tại, vui lòng đăng nhập lại.");
 
+  let activeUser;
+  try {
+    activeUser = await ensureUserNotLocked(user);
+  } catch (err) {
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+    throw err;
+  }
+
   await prisma.refreshToken.delete({ where: { token } });
-  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
-  await saveRefreshToken(user.id, newRefreshToken);
+  const { accessToken, refreshToken: newRefreshToken } = generateTokens(activeUser);
+  await saveRefreshToken(activeUser.id, newRefreshToken);
 
   return {
     accessToken,
@@ -294,6 +355,68 @@ const resetPassword = async ({ email: rawEmail, otp, newPassword }) => {
   return { message: "Đặt lại mật khẩu thành công." };
 };
 
+const MIN_APPEAL_LENGTH = 20;
+const MAX_APPEAL_LENGTH = 1500;
+
+const submitLockAppeal = async ({ email: rawEmail, password, reason }) => {
+  const email = normalizeEmail(rawEmail);
+  if (!email || !password) {
+    throw new Error("Vui lòng nhập email và mật khẩu để gửi khiếu nại.");
+  }
+  const trimmedReason = String(reason ?? "").trim();
+  if (trimmedReason.length < MIN_APPEAL_LENGTH) {
+    throw new Error(
+      `Vui lòng trình bày lý do khiếu nại ít nhất ${MIN_APPEAL_LENGTH} ký tự.`,
+    );
+  }
+  if (trimmedReason.length > MAX_APPEAL_LENGTH) {
+    throw new Error(
+      `Nội dung khiếu nại tối đa ${MAX_APPEAL_LENGTH} ký tự.`,
+    );
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) throw new Error("Email hoặc mật khẩu chưa đúng.");
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) throw new Error("Email hoặc mật khẩu chưa đúng.");
+
+  if (!user.isLocked) {
+    throw new Error("Tài khoản này hiện không bị khóa.");
+  }
+
+  const existingPending = await prisma.userLockAppeal.findFirst({
+    where: { userId: user.id, status: "pending" },
+    select: { id: true, submittedAt: true },
+  });
+  if (existingPending) {
+    throw new Error(
+      "Bạn đã gửi một khiếu nại đang chờ xử lý. Vui lòng đợi quản trị viên phản hồi.",
+    );
+  }
+
+  const appeal = await prisma.userLockAppeal.create({
+    data: {
+      userId: user.id,
+      reason: trimmedReason,
+      status: "pending",
+    },
+    select: {
+      id: true,
+      status: true,
+      submittedAt: true,
+    },
+  });
+
+  return {
+    appeal: {
+      id: appeal.id,
+      status: appeal.status,
+      submitted_at: appeal.submittedAt,
+    },
+  };
+};
+
 module.exports = {
   register,
   login,
@@ -302,5 +425,6 @@ module.exports = {
   forgotPassword,
   verifyResetOtp,
   resetPassword,
+  submitLockAppeal,
 };
 

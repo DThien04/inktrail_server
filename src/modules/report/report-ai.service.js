@@ -56,9 +56,14 @@ function normalizeSeverity(severity) {
 function normalizeSuggestedAction(value) {
   const normalized = normalizeText(value).toLowerCase();
   if (
-    ["allow", "review", "review_soon", "review_urgent", "remove_candidate"].includes(
-      normalized,
-    )
+    [
+      "allow",
+      "review",
+      "review_soon",
+      "review_urgent",
+      "remove_candidate",
+      "account_lock_candidate",
+    ].includes(normalized)
   ) {
     return normalized;
   }
@@ -98,9 +103,10 @@ function buildSharedCasePromptLines(reportCase, targetLabel) {
   return [
     "You are an AI assistant for a story-reading platform moderation dashboard.",
     `Analyze this reported ${targetLabel} case and return only valid JSON.`,
-    'Schema: {"flagged": boolean, "categories": string[], "severity": "low"|"medium"|"high"|"critical", "confidence": number, "summary": string, "suggested_action": "allow"|"review"|"review_soon"|"review_urgent"|"remove_candidate"}',
+    'Schema: {"flagged": boolean, "categories": string[], "severity": "low"|"medium"|"high"|"critical", "confidence": number, "summary": string, "suggested_action": "allow"|"review"|"review_soon"|"review_urgent"|"remove_candidate"|"account_lock_candidate"}',
     "Use categories only from this set: harassment, hate, sexual, violence, self_harm, spam, copyright, misleading, other.",
     "Keep categories, severity, and suggested_action exactly in the allowed English enum values.",
+    "Choose suggested_action='account_lock_candidate' only when severity is 'critical', the violation is severe (e.g. hate, sexual content involving minors, repeated severe violations), AND the case has many reports (reports>=5) or reopened_count>=2. In all other cases prefer 'remove_candidate' or lower.",
     "Write summary in natural Vietnamese for Vietnamese admins. Do not write the summary in English.",
     "The summary must be concise, practical, and based on the content and reports.",
     `Current case stats: reports=${reportCase.reportCount}, unique_reporters=${reportCase.uniqueReporterCount}, reopened_count=${reportCase.reopenedCount}`,

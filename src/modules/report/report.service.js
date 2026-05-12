@@ -1,5 +1,6 @@
 const prisma = require("../../config/prisma");
 const notificationService = require("../notification/notification.service");
+const userService = require("../user/user.service");
 const {
   recomputeChapterFeaturedComment,
 } = require("../comment/comment-featured.service");
@@ -7,6 +8,13 @@ const {
   analyzeReportCaseAi,
   analyzeReportCaseAppealAi,
 } = require("./report-ai.service");
+const { dispatchAiAnalyze } = require("../../queues/ai-analyze.queue");
+const { dispatchNotification } = require("../../queues/notification.queue");
+const {
+  enqueueReportCaseAiFollowup,
+  enqueueReportAppealAiFollowup,
+  isReportAiFollowupQueueEnabled,
+} = require("../../queues/report-ai-followup.queue");
 const {
   calculateReportCaseRisk,
   deriveReportCasePriority,
@@ -68,7 +76,12 @@ const summarizeAppealAiForUser = (reportCase) => {
   return "Khiếu nại của bạn đã được tiếp nhận và chuyển đến quản trị viên để xem xét.";
 };
 
-const scheduleReportCaseAiAnalysis = ({
+/**
+ * Legacy in-process scheduler (setTimeout) - chỉ dùng làm fallback khi Redis
+ * không khả dụng. Khi có queue, code đi qua wrapper bên dưới và logic này
+ * được skip hoàn toàn.
+ */
+const legacyScheduleReportCaseAiAnalysis = ({
   type,
   caseId,
   recipientId,
@@ -82,7 +95,7 @@ const scheduleReportCaseAiAnalysis = ({
       const analyzed = await analyzeReportCaseAi({ type, caseId });
       if (!analyzed || !recipientId) return;
 
-      await notificationService.createNotification({
+      await dispatchNotification({
         recipientId,
         actorId: null,
         storyId: storyId ?? null,
@@ -112,7 +125,7 @@ const scheduleReportCaseAiAnalysis = ({
         }),
       );
       if (attempt < REPORT_AI_MAX_ATTEMPTS) {
-        scheduleReportCaseAiAnalysis({
+        legacyScheduleReportCaseAiAnalysis({
           type,
           caseId,
           recipientId,
@@ -126,7 +139,7 @@ const scheduleReportCaseAiAnalysis = ({
   }, attempt === 1 ? 0 : REPORT_AI_RETRY_DELAY_MS);
 };
 
-const scheduleReportAppealAiAnalysis = ({
+const legacyScheduleReportAppealAiAnalysis = ({
   caseId,
   recipientId,
   storyId,
@@ -140,7 +153,7 @@ const scheduleReportAppealAiAnalysis = ({
       const analyzed = await analyzeReportCaseAppealAi({ caseId });
       if (!analyzed || !recipientId) return;
 
-      await notificationService.createNotification({
+      await dispatchNotification({
         recipientId,
         actorId: null,
         storyId: storyId ?? null,
@@ -172,7 +185,7 @@ const scheduleReportAppealAiAnalysis = ({
         }),
       );
       if (attempt < REPORT_AI_MAX_ATTEMPTS) {
-        scheduleReportAppealAiAnalysis({
+        legacyScheduleReportAppealAiAnalysis({
           caseId,
           recipientId,
           storyId,
@@ -184,6 +197,36 @@ const scheduleReportAppealAiAnalysis = ({
       }
     }
   }, attempt === 1 ? 0 : REPORT_AI_RETRY_DELAY_MS);
+};
+
+const scheduleReportCaseAiAnalysis = (payload) => {
+  if (!payload?.caseId) return;
+  if (!isReportAiFollowupQueueEnabled()) {
+    legacyScheduleReportCaseAiAnalysis(payload);
+    return;
+  }
+  void enqueueReportCaseAiFollowup(payload).catch((error) => {
+    console.error("[schedule-case-ai-followup:enqueue-error]", {
+      case_id: payload.caseId,
+      message: error?.message || String(error),
+    });
+    legacyScheduleReportCaseAiAnalysis(payload);
+  });
+};
+
+const scheduleReportAppealAiAnalysis = (payload) => {
+  if (!payload?.caseId) return;
+  if (!isReportAiFollowupQueueEnabled()) {
+    legacyScheduleReportAppealAiAnalysis(payload);
+    return;
+  }
+  void enqueueReportAppealAiFollowup(payload).catch((error) => {
+    console.error("[schedule-appeal-ai-followup:enqueue-error]", {
+      case_id: payload.caseId,
+      message: error?.message || String(error),
+    });
+    legacyScheduleReportAppealAiAnalysis(payload);
+  });
 };
 
 const validateCommentReportReason = (reason) => {
@@ -279,6 +322,8 @@ const buildReportSummary = ({ type, report }) => {
       case_last_reported_at: report.reportCase?.lastReportedAt ?? null,
       case_restored_at: report.reportCase?.restoredAt ?? null,
       case_restored_by_id: report.reportCase?.restoredById ?? null,
+      case_account_lock_applied: report.reportCase?.accountLockApplied ?? false,
+      case_account_locked_user_id: report.reportCase?.accountLockedUserId ?? null,
       case_ai_flagged: report.reportCase?.aiFlagged ?? false,
       case_ai_categories: report.reportCase?.aiCategories ?? null,
       case_ai_confidence: report.reportCase?.aiConfidence ?? null,
@@ -357,6 +402,8 @@ const buildReportSummary = ({ type, report }) => {
       case_last_reported_at: report.reportCase?.lastReportedAt ?? null,
       case_restored_at: report.reportCase?.restoredAt ?? null,
       case_restored_by_id: report.reportCase?.restoredById ?? null,
+      case_account_lock_applied: report.reportCase?.accountLockApplied ?? false,
+      case_account_locked_user_id: report.reportCase?.accountLockedUserId ?? null,
       case_ai_flagged: report.reportCase?.aiFlagged ?? false,
       case_ai_categories: report.reportCase?.aiCategories ?? null,
       case_ai_confidence: report.reportCase?.aiConfidence ?? null,
@@ -434,6 +481,8 @@ const buildReportSummary = ({ type, report }) => {
     case_last_reported_at: report.reportCase?.lastReportedAt ?? null,
     case_restored_at: report.reportCase?.restoredAt ?? null,
     case_restored_by_id: report.reportCase?.restoredById ?? null,
+    case_account_lock_applied: report.reportCase?.accountLockApplied ?? false,
+    case_account_locked_user_id: report.reportCase?.accountLockedUserId ?? null,
     case_ai_flagged: report.reportCase?.aiFlagged ?? false,
     case_ai_categories: report.reportCase?.aiCategories ?? null,
     case_ai_confidence: report.reportCase?.aiConfidence ?? null,
@@ -529,6 +578,8 @@ const getAdminReportInclude = (type) => {
           resolvedAt: true,
           restoredAt: true,
           restoredById: true,
+          accountLockApplied: true,
+          accountLockedUserId: true,
         },
       },
       reporter: {
@@ -597,6 +648,8 @@ const getAdminReportInclude = (type) => {
           resolvedAt: true,
           restoredAt: true,
           restoredById: true,
+          accountLockApplied: true,
+          accountLockedUserId: true,
         },
       },
       reporter: {
@@ -660,6 +713,8 @@ const getAdminReportInclude = (type) => {
         resolvedAt: true,
         restoredAt: true,
         restoredById: true,
+        accountLockApplied: true,
+        accountLockedUserId: true,
       },
     },
     reporter: {
@@ -1022,7 +1077,7 @@ const reportChapterComment = async ({ commentId, requester, reason, description 
       type: "chapter_comment",
       caseId: existingReport.caseId,
     });
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: requester.id,
       actorId: null,
       storyId: comment.chapter?.story?.id ?? null,
@@ -1090,7 +1145,7 @@ const reportChapterComment = async ({ commentId, requester, reason, description 
     type: "chapter_comment",
     caseId: reportCase.id,
   });
-  await notificationService.createNotification({
+  await dispatchNotification({
     recipientId: requester.id,
     actorId: null,
     storyId: comment.chapter?.story?.id ?? null,
@@ -1188,7 +1243,7 @@ const reportStory = async ({ storyId, requester, reason, description }) => {
       type: "story",
       caseId: existingReport.caseId,
     });
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: requester.id,
       actorId: null,
       storyId: story.id,
@@ -1256,7 +1311,7 @@ const reportStory = async ({ storyId, requester, reason, description }) => {
     type: "story",
     caseId: reportCase.id,
   });
-  await notificationService.createNotification({
+  await dispatchNotification({
     recipientId: requester.id,
     actorId: null,
     storyId: story.id,
@@ -1354,7 +1409,7 @@ const reportChapter = async ({ chapterId, requester, reason, description }) => {
       type: "chapter",
       caseId: existingReport.caseId,
     });
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: requester.id,
       actorId: null,
       storyId: chapter.story?.id ?? null,
@@ -1422,7 +1477,7 @@ const reportChapter = async ({ chapterId, requester, reason, description }) => {
     type: "chapter",
     caseId: reportCase.id,
   });
-  await notificationService.createNotification({
+  await dispatchNotification({
     recipientId: requester.id,
     actorId: null,
     storyId: chapter.story?.id ?? null,
@@ -1648,13 +1703,13 @@ const updateChapterCommentModeration = async ({
     });
   }
 
-  await analyzeReportCaseAi({
+  await dispatchAiAnalyze({
     type: "chapter_comment",
     caseId,
   });
 
   if (status !== "pending" && reporter?.id) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: reporter.id,
       actorId: requester.id,
       storyId: story?.id ?? null,
@@ -1686,7 +1741,7 @@ const updateChapterCommentModeration = async ({
   }
 
   if (status === "removed" && ownerNotified && comment.userId !== requester.id) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: comment.userId,
       actorId: requester.id,
       storyId: story?.id ?? null,
@@ -1814,7 +1869,7 @@ const updateChapterModeration = async ({
       : null;
 
   if (status !== "pending" && reporter?.id) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: reporter.id,
       actorId: requester.id,
       storyId: story?.id ?? null,
@@ -1845,7 +1900,7 @@ const updateChapterModeration = async ({
   }
 
   if (status === "action_taken" && ownerNotified && chapter.story.authorId !== requester.id) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: chapter.story.authorId,
       actorId: requester.id,
       storyId: story?.id ?? null,
@@ -1869,7 +1924,7 @@ const updateChapterModeration = async ({
     });
   }
 
-  await analyzeReportCaseAi({
+  await dispatchAiAnalyze({
     type: "chapter",
     caseId,
   });
@@ -1965,7 +2020,7 @@ const updateStoryModeration = async ({
   const linkUrl = story?.slug ? `/stories/${story.slug}` : null;
 
   if (status !== "pending" && reporter?.id) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: reporter.id,
       actorId: requester.id,
       storyId: story?.id ?? null,
@@ -1993,7 +2048,7 @@ const updateStoryModeration = async ({
   }
 
   if (status === "action_taken" && ownerNotified && story.authorId !== requester.id) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: story.authorId,
       actorId: requester.id,
       storyId: story?.id ?? null,
@@ -2014,7 +2069,7 @@ const updateStoryModeration = async ({
     });
   }
 
-  await analyzeReportCaseAi({
+  await dispatchAiAnalyze({
     type: "story",
     caseId,
   });
@@ -2097,38 +2152,48 @@ const getCriticalCaseReportIds = (reportCase) => {
 const getDefaultActionStatusForType = (type) =>
   type === "chapter_comment" ? "removed" : "action_taken";
 
-const processCriticalAdminReportCases = async ({ requester }) => {
+const CRITICAL_BATCH_LIMIT = 50;
+const CRITICAL_BATCH_CONCURRENCY = 5;
+
+const processCriticalAdminReportCases = async ({
+  requester,
+  lockAuthor = false,
+  lockReason = "",
+}) => {
   if (!requester?.id) throw new Error("B?n c?n dang nh?p d? ti?p t?c.");
 
-  const criticalCases = await prisma.reportCase.findMany({
-    where: {
-      status: "pending",
-      priority: "critical",
-    },
-    orderBy: [{ riskScore: "desc" }, { lastReportedAt: "asc" }],
-    include: {
-      storyReports: {
-        where: { status: "pending" },
-        select: { id: true },
+  const trimmedLockReason = normalizeText(lockReason);
+  if (lockAuthor && !trimmedLockReason) {
+    throw new Error("Vui lòng nhập lý do khóa khi chọn khóa luôn người đăng.");
+  }
+
+  const [totalCriticalPending, criticalCases] = await Promise.all([
+    prisma.reportCase.count({
+      where: { status: "pending", priority: "critical" },
+    }),
+    prisma.reportCase.findMany({
+      where: { status: "pending", priority: "critical" },
+      orderBy: [{ riskScore: "desc" }, { lastReportedAt: "asc" }],
+      take: CRITICAL_BATCH_LIMIT,
+      include: {
+        storyReports: { where: { status: "pending" }, select: { id: true } },
+        chapterReports: { where: { status: "pending" }, select: { id: true } },
+        chapterCommentReports: {
+          where: { status: "pending" },
+          select: { id: true },
+        },
       },
-      chapterReports: {
-        where: { status: "pending" },
-        select: { id: true },
-      },
-      chapterCommentReports: {
-        where: { status: "pending" },
-        select: { id: true },
-      },
-    },
-  });
+    }),
+  ]);
 
   const processedItems = [];
   const errors = [];
   let processedReportCount = 0;
+  let lockedAuthorCount = 0;
 
-  for (const reportCase of criticalCases) {
+  const processOneCase = async (reportCase) => {
     const reportIds = getCriticalCaseReportIds(reportCase);
-    if (!reportIds.length) continue;
+    if (!reportIds.length) return;
 
     try {
       let latestItem = null;
@@ -2142,6 +2207,27 @@ const processCriticalAdminReportCases = async ({ requester }) => {
         processedReportCount += 1;
       }
       if (latestItem) processedItems.push(latestItem);
+
+      if (lockAuthor && !reportCase.accountLockApplied) {
+        try {
+          await lockReportCaseAuthor({
+            caseId: reportCase.id,
+            requester,
+            reason: trimmedLockReason,
+            lockedUntil: null,
+            alsoResolveContent: false,
+          });
+          lockedAuthorCount += 1;
+        } catch (lockError) {
+          errors.push({
+            case_id: reportCase.id,
+            target_type: reportCase.targetType,
+            message: `Khóa tác giả thất bại: ${
+              lockError instanceof Error ? lockError.message : "Unknown error"
+            }`,
+          });
+        }
+      }
     } catch (error) {
       errors.push({
         case_id: reportCase.id,
@@ -2152,12 +2238,25 @@ const processCriticalAdminReportCases = async ({ requester }) => {
             : "Failed to process critical report case.",
       });
     }
+  };
+
+  for (let i = 0; i < criticalCases.length; i += CRITICAL_BATCH_CONCURRENCY) {
+    const chunk = criticalCases.slice(i, i + CRITICAL_BATCH_CONCURRENCY);
+    await Promise.allSettled(chunk.map(processOneCase));
   }
+
+  const remainingCriticalCount = Math.max(
+    0,
+    totalCriticalPending - processedItems.length - errors.length,
+  );
 
   return {
     processed_case_count: processedItems.length,
     processed_report_count: processedReportCount,
+    locked_author_count: lockedAuthorCount,
     failed_case_count: errors.length,
+    remaining_critical_count: remainingCriticalCount,
+    batch_limit: CRITICAL_BATCH_LIMIT,
     errors,
     items: processedItems,
   };
@@ -2393,7 +2492,7 @@ const submitReportCaseAppeal = async ({ caseId, requester, reason }) => {
   }, { timeout: 15000, maxWait: 10000 });
 
   if (notificationPayload?.ownerId) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: notificationPayload.ownerId,
       actorId: null,
       storyId: notificationPayload.storyId,
@@ -2425,13 +2524,14 @@ const submitReportCaseAppeal = async ({ caseId, requester, reason }) => {
   };
 };
 
-const restoreAdminReportCase = async ({ caseId, requester }) => {
+const restoreAdminReportCase = async ({ caseId, requester, unlockUser = false }) => {
   const normalizedCaseId = normalizeText(caseId);
   if (!normalizedCaseId) throw new Error("Thi?u thÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ng tin v? vi?c bÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡o.");
   if (!requester?.id) throw new Error("B?n c?n dang nh?p d? ti?p t?c.");
 
   let shouldRecomputeFeatured = false;
   let recomputeChapterId = null;
+  let lockedUserToUnlockId = null;
 
   const transactionResult = await prisma.$transaction(async (tx) => {
     let notificationPayload = null;
@@ -2444,6 +2544,8 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
         status: true,
         resolutionAction: true,
         restoredAt: true,
+        accountLockApplied: true,
+        accountLockedUserId: true,
       },
     });
 
@@ -2649,6 +2751,21 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
       },
     });
 
+    if (
+      unlockUser &&
+      reportCase.accountLockApplied &&
+      reportCase.accountLockedUserId &&
+      reportCase.accountLockedUserId !== requester.id
+    ) {
+      const lockedUser = await tx.user.findUnique({
+        where: { id: reportCase.accountLockedUserId },
+        select: { id: true, isLocked: true },
+      });
+      if (lockedUser?.isLocked) {
+        lockedUserToUnlockId = reportCase.accountLockedUserId;
+      }
+    }
+
     const delegate = getAdminReportDelegate(reportCase.targetType, tx);
     const report = await delegate.findFirst({
       where: { caseId: reportCase.id },
@@ -2663,6 +2780,26 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
     };
   }, { timeout: 15000, maxWait: 10000 });
 
+  if (lockedUserToUnlockId) {
+    try {
+      await userService.unlockUser({
+        targetUserId: lockedUserToUnlockId,
+        actorId: requester.id,
+        caseId: normalizedCaseId,
+        action: "unlock_via_appeal",
+      });
+    } catch (unlockError) {
+      console.error(
+        "[restore-case-unlock:error]",
+        JSON.stringify({
+          case_id: normalizedCaseId,
+          user_id: lockedUserToUnlockId,
+          message: unlockError?.message || String(unlockError),
+        }),
+      );
+    }
+  }
+
   if (shouldRecomputeFeatured && recomputeChapterId) {
     await recomputeChapterFeaturedComment({ chapterId: recomputeChapterId });
   }
@@ -2675,7 +2812,7 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
     transactionResult.notificationPayload?.recipientId &&
     transactionResult.notificationPayload.recipientId !== requester.id
   ) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       ...transactionResult.notificationPayload,
       actorId: requester.id,
       type: "admin_message",
@@ -2686,6 +2823,160 @@ const restoreAdminReportCase = async ({ caseId, requester }) => {
     type: transactionResult.type,
     report: transactionResult.report,
   });
+};
+
+const lockReportCaseAuthor = async ({
+  caseId,
+  requester,
+  reason,
+  lockedUntil,
+  alsoResolveContent = true,
+}) => {
+  const normalizedCaseId = normalizeText(caseId);
+  if (!normalizedCaseId) throw new Error("Thiếu thông tin vụ việc.");
+  if (!requester?.id) throw new Error("Bạn cần đăng nhập để tiếp tục.");
+
+  const trimmedReason = normalizeText(reason);
+  if (!trimmedReason) throw new Error("Vui lòng nhập lý do khóa tài khoản.");
+
+  const reportCase = await prisma.reportCase.findUnique({
+    where: { id: normalizedCaseId },
+    select: {
+      id: true,
+      targetType: true,
+      targetId: true,
+      status: true,
+      accountLockApplied: true,
+      accountLockedUserId: true,
+    },
+  });
+  if (!reportCase) throw new Error("Không tìm thấy vụ việc báo cáo.");
+  if (reportCase.accountLockApplied) {
+    throw new Error("Người đăng nội dung này đã bị khóa từ vụ việc.");
+  }
+
+  const ownerContext = await getReportCaseOwnerContext({ reportCase });
+  const ownerId = ownerContext.ownerId;
+  if (!ownerId) throw new Error("Không xác định được tác giả của nội dung.");
+  if (ownerId === requester.id) {
+    throw new Error("Bạn không thể tự khóa tài khoản của chính mình.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await userService.lockUser({
+      targetUserId: ownerId,
+      actorId: requester.id,
+      reason: trimmedReason,
+      lockedUntil,
+      caseId: normalizedCaseId,
+      tx,
+    });
+    await tx.reportCase.update({
+      where: { id: reportCase.id },
+      data: {
+        accountLockApplied: true,
+        accountLockedUserId: ownerId,
+      },
+    });
+  }, { timeout: 15000, maxWait: 10000 });
+
+  let resolvedCount = 0;
+  if (alsoResolveContent) {
+    const delegate = getAdminReportDelegate(reportCase.targetType);
+    const pendingReports = await delegate.findMany({
+      where: { caseId: reportCase.id, status: "pending" },
+      select: { id: true },
+    });
+    const targetStatus = getDefaultActionStatusForType(reportCase.targetType);
+    for (const report of pendingReports) {
+      try {
+        await updateAdminReportStatus({
+          type: reportCase.targetType,
+          reportId: report.id,
+          status: targetStatus,
+          requester,
+        });
+        resolvedCount += 1;
+      } catch (resolveError) {
+        console.error(
+          "[lock-author-resolve-content:error]",
+          JSON.stringify({
+            case_id: reportCase.id,
+            report_id: report.id,
+            message: resolveError?.message || String(resolveError),
+          }),
+        );
+      }
+    }
+  }
+
+  await dispatchNotification({
+    recipientId: ownerId,
+    actorId: requester.id,
+    storyId: ownerContext.storyId ?? null,
+    chapterId: ownerContext.chapterId ?? null,
+    type: "admin_message",
+    title: "Tài khoản của bạn đã bị khóa",
+    body: `Tài khoản của bạn đã bị khóa do vi phạm chính sách. Lý do: ${trimmedReason}`,
+    linkUrl: ownerContext.linkUrl ?? null,
+    meta: {
+      case_id: reportCase.id,
+      audience: "owner",
+      report_type: reportCase.targetType,
+      resolution_action: "account_locked",
+      target_type: reportCase.targetType,
+      locked_reason: trimmedReason,
+      moderated_by: getRequesterDisplayName(requester),
+    },
+  });
+
+  const refreshedCase = await prisma.reportCase.findUnique({
+    where: { id: reportCase.id },
+    select: {
+      id: true,
+      accountLockApplied: true,
+      accountLockedUserId: true,
+      lockedUser: {
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          isLocked: true,
+          lockedAt: true,
+          lockedUntil: true,
+          lockedReason: true,
+        },
+      },
+    },
+  });
+
+  let representative = null;
+  try {
+    representative = await getReportSummaryForCase({
+      type: reportCase.targetType,
+      caseId: reportCase.id,
+    });
+  } catch (_) {
+    representative = null;
+  }
+
+  return {
+    case_id: reportCase.id,
+    account_lock_applied: refreshedCase?.accountLockApplied ?? true,
+    locked_user: refreshedCase?.lockedUser
+      ? {
+          id: refreshedCase.lockedUser.id,
+          email: refreshedCase.lockedUser.email,
+          display_name: refreshedCase.lockedUser.displayName,
+          is_locked: refreshedCase.lockedUser.isLocked,
+          locked_at: refreshedCase.lockedUser.lockedAt,
+          locked_until: refreshedCase.lockedUser.lockedUntil,
+          locked_reason: refreshedCase.lockedUser.lockedReason,
+        }
+      : null,
+    resolved_report_count: resolvedCount,
+    representative,
+  };
 };
 
 const getReportSummaryForCase = async ({ type, caseId }) => {
@@ -2772,7 +3063,7 @@ const resolveReportCaseAppeal = async ({ caseId, action, requester }) => {
     notificationPayload?.ownerId &&
     notificationPayload.ownerId !== requester.id
   ) {
-    await notificationService.createNotification({
+    await dispatchNotification({
       recipientId: notificationPayload.ownerId,
       actorId: requester.id,
       storyId: notificationPayload.storyId,
@@ -2802,6 +3093,7 @@ module.exports = {
   updateAdminReportStatus,
   processCriticalAdminReportCases,
   restoreAdminReportCase,
+  lockReportCaseAuthor,
   submitReportCaseAppeal,
   resolveReportCaseAppeal,
   reportStory,
