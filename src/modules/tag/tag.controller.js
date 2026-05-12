@@ -43,6 +43,8 @@ const getAdminTags = async (req, res) => {
       ungroupedOnly,
       page,
       pageSize,
+      sortBy: req.query.sort_by || req.query.sortBy,
+      sortOrder: req.query.sort_order || req.query.sortOrder,
     });
     res.json(result);
   } catch (err) {

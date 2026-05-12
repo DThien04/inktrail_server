@@ -9,6 +9,9 @@ const getAdminTagGroups = async (req, res) => {
       keyword: req.query.keyword,
       page,
       pageSize,
+      sortBy: req.query.sort_by || req.query.sortBy,
+      sortOrder: req.query.sort_order || req.query.sortOrder,
+      tagFilter: req.query.tag_filter || req.query.tagFilter,
     });
     res.json(result);
   } catch (err) {

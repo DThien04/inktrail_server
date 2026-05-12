@@ -217,12 +217,37 @@ const deleteTag = async ({ tagId, hardDelete = false }) => {
   return { message: "Đã ẩn tag thành công." };
 };
 
+const ADMIN_TAG_SORT_FIELDS = new Set([
+  "name",
+  "usage_count",
+  "updated_at",
+  "created_at",
+]);
+
+const buildAdminTagOrderBy = (sortBy, sortOrder) => {
+  const direction = sortOrder === "asc" ? "asc" : "desc";
+  const key = ADMIN_TAG_SORT_FIELDS.has(sortBy) ? sortBy : "updated_at";
+  switch (key) {
+    case "name":
+      return [{ name: direction }];
+    case "usage_count":
+      return [{ storyTags: { _count: direction } }, { updatedAt: "desc" }];
+    case "created_at":
+      return [{ createdAt: direction }];
+    case "updated_at":
+    default:
+      return [{ updatedAt: direction }];
+  }
+};
+
 const getAdminTags = async ({
   keyword,
   groupId,
   ungroupedOnly = false,
   page = 1,
   pageSize = 20,
+  sortBy,
+  sortOrder,
 } = {}) => {
   const normalizedKeyword =
     normalizeHashtagName(keyword) || normalizeText(keyword).toLowerCase();
@@ -240,6 +265,8 @@ const getAdminTags = async ({
         : {}),
   };
 
+  const orderBy = buildAdminTagOrderBy(sortBy, sortOrder);
+
   const [total, tags] = await Promise.all([
     prisma.tag.count({ where }),
     prisma.tag.findMany({
@@ -247,7 +274,7 @@ const getAdminTags = async ({
       skip,
       take,
       include: { _count: { select: { storyTags: true } }, group: true },
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy,
     }),
   ]);
 

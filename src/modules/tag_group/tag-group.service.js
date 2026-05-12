@@ -10,14 +10,59 @@ const formatGroup = (group) => ({
   updated_at: group.updatedAt,
 });
 
-const getAdminTagGroups = async ({ keyword, page = 1, pageSize = 20 } = {}) => {
+const ADMIN_TAG_GROUP_SORT_FIELDS = new Set([
+  "name",
+  "tag_count",
+  "updated_at",
+  "created_at",
+]);
+
+const buildAdminTagGroupOrderBy = (sortBy, sortOrder) => {
+  const direction = sortOrder === "asc" ? "asc" : "desc";
+  const key = ADMIN_TAG_GROUP_SORT_FIELDS.has(sortBy) ? sortBy : "updated_at";
+  switch (key) {
+    case "name":
+      return [{ name: direction }];
+    case "tag_count":
+      return [{ tags: { _count: direction } }, { updatedAt: "desc" }];
+    case "created_at":
+      return [{ createdAt: direction }];
+    case "updated_at":
+    default:
+      return [{ updatedAt: direction }];
+  }
+};
+
+const getAdminTagGroups = async ({
+  keyword,
+  page = 1,
+  pageSize = 20,
+  sortBy,
+  sortOrder,
+  tagFilter,
+} = {}) => {
   const normalized = normalizeText(keyword).toLowerCase();
   const take = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
   const skip = Math.max(((Number(page) || 1) - 1) * take, 0);
 
-  const where = normalized
-    ? { name: { contains: normalized, mode: "insensitive" } }
-    : {};
+  const tagFilterKey = normalizeText(tagFilter).toLowerCase();
+  const whereParts = [];
+  if (normalized) {
+    whereParts.push({
+      OR: [
+        { name: { contains: normalized, mode: "insensitive" } },
+        { description: { contains: normalized, mode: "insensitive" } },
+      ],
+    });
+  }
+  if (tagFilterKey === "empty") {
+    whereParts.push({ tags: { none: {} } });
+  } else if (tagFilterKey === "non_empty" || tagFilterKey === "has_tags") {
+    whereParts.push({ tags: { some: {} } });
+  }
+
+  const where = whereParts.length === 0 ? {} : { AND: whereParts };
+  const orderBy = buildAdminTagGroupOrderBy(sortBy, sortOrder);
 
   const [total, groups] = await Promise.all([
     prisma.tagGroup.count({ where }),
@@ -26,7 +71,7 @@ const getAdminTagGroups = async ({ keyword, page = 1, pageSize = 20 } = {}) => {
       skip,
       take,
       include: { _count: { select: { tags: true } } },
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy,
     }),
   ]);
 
